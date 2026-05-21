@@ -67,6 +67,7 @@ MAX_RETRIES = 2
 POLL_PROFILES: Dict[str, dict] = {
     "image":    {"interval": 5,  "timeout": 300,  "backoff": 1.5, "max_interval": 15},
     "video":    {"interval": 10, "timeout": 600,  "backoff": 1.5, "max_interval": 30},
+    "audio":    {"interval": 10, "timeout": 600,  "backoff": 1.5, "max_interval": 30},
     "workflow": {"interval": 30, "timeout": 1800, "backoff": 1.2, "max_interval": 60},
 }
 
@@ -74,6 +75,7 @@ POLL_PROFILES: Dict[str, dict] = {
 JOB_TYPE_MAP = {
     "generate-image": "image",
     "generate-video": "video",
+    "generate-audio": "audio",
     "generate-marketing-image": "image",
     "run-workflow": "workflow",
 }
@@ -488,6 +490,23 @@ def api_generate_marketing_image(config: dict, prompt: str, *,
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/marketing-image",
         api_key=config["apiKey"], json_body=body, dry_run=dry_run,
+    )
+
+
+def api_generate_audio(config: dict, provider: str, model: str, *,
+                       platform_params: dict = None,
+                       callback_url: str = None,
+                       idempotency_key: str = None,
+                       dry_run: bool = False) -> dict:
+    body: Dict[str, Any] = {"provider": provider, "model": model}
+    if platform_params:
+        body["platform_params"] = platform_params
+    if callback_url:
+        body["callback_url"] = callback_url
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/generate/audio",
+        api_key=config["apiKey"], json_body=body,
+        idempotency_key=idempotency_key, dry_run=dry_run,
     )
 
 
@@ -992,6 +1011,44 @@ def cmd_generate_marketing_image(args, config: dict):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def cmd_generate_audio(args, config: dict):
+    """Generate audio (music, sound effects) via multi-platform providers."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+
+    api_kwargs: Dict[str, Any] = {
+        "provider": args.provider,
+        "model": args.model,
+    }
+
+    if args.platform_params:
+        try:
+            api_kwargs["platform_params"] = json.loads(args.platform_params)
+        except json.JSONDecodeError as e:
+            print(json.dumps({
+                "error": f"--platform-params must be valid JSON: {e}",
+                "hint": 'Example: --platform-params \'{"suno_generate": {"prompt": "a pop song", "custom_mode": false, "instrumental": false}}\'',
+            }), file=sys.stderr)
+            sys.exit(1)
+
+    api_kwargs.update(_collect_optional_args(args, ["callback_url"]))
+
+    if _should_spawn(args):
+        result = build_spawn_task(
+            "generate-audio", api_kwargs,
+            deliver_to=getattr(args, "deliver_to", None),
+            deliver_channel=getattr(args, "deliver_channel", None),
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    result = submit_and_poll(
+        config, "generate-audio", api_generate_audio, api_kwargs,
+        no_wait=args.no_wait, dry_run=dry_run,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 # --- Workflow commands ---
 
 def cmd_list_workflows(args, config: dict):
@@ -1476,6 +1533,24 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Image size (e.g. 1080x1920)")
     _add_wait_and_dry_run(p)
 
+    # --- generate-audio ---
+    p = sub.add_parser("generate-audio",
+                       help="Generate audio (music, sound effects) via multi-platform providers")
+    p.add_argument("--provider", required=True,
+                   help="Audio provider: suno, kling, minimax, etc.")
+    p.add_argument("--model", required=True,
+                   help="Model ID (e.g. V4_5ALL for suno, kling_audio for kling)")
+    p.add_argument("--platform-params", default=None,
+                   help='Platform-specific params as JSON string (e.g. \'{"suno_generate": {"prompt": "a pop song", "custom_mode": false, "instrumental": false}}\')')
+    p.add_argument("--spawn", action="store_true", default=False,
+                   help="Output sessions_spawn_args payload instead of running directly")
+    p.add_argument("--deliver-to", default=None,
+                   help="Delivery target (ou_xxx, chat_id, channel_id) — used with --spawn")
+    p.add_argument("--deliver-channel", default=None,
+                   choices=["feishu", "telegram", "discord"],
+                   help="Delivery channel — used with --spawn")
+    _add_wait_and_dry_run(p)
+
     # --- list-workflows ---
     p = sub.add_parser("list-workflows", help="List available preset workflows")
     _add_dry_run(p)
@@ -1574,7 +1649,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Build sessions_spawn payload for async agent execution")
     p.add_argument("--subcommand", required=True,
                    choices=["generate-image", "generate-video",
-                            "generate-marketing-image", "run-workflow"],
+                            "generate-audio", "generate-marketing-image",
+                            "run-workflow"],
                    help="Which generation command to spawn")
     p.add_argument("--prompt", default=None, help="Generation prompt")
     p.add_argument("--aspect-ratio", default=None, help="Aspect ratio")
@@ -1618,6 +1694,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMAND_MAP = {
     "generate-image": cmd_generate_image,
     "generate-video": cmd_generate_video,
+    "generate-audio": cmd_generate_audio,
     "generate-marketing-image": cmd_generate_marketing_image,
     "list-workflows": cmd_list_workflows,
     "run-workflow": cmd_run_workflow,
