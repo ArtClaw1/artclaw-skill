@@ -22,6 +22,7 @@ ENDPOINTS = {
     # Generation (async, returns job_id)
     "generate_image": ("POST", "/generate/image"),
     "generate_video": ("POST", "/generate/video"),
+    "generate_audio": ("POST", "/generate/audio"),
     "generate_marketing_image": ("POST", "/generate/marketing-image"),
     # Workflows
     "list_workflows": ("GET", "/workflows/"),

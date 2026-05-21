@@ -12,6 +12,7 @@
     "ai",
     "image-generation",
     "video-generation",
+    "audio-generation",
     "rest-api",
     "artclaw",
     "marketing",
@@ -63,6 +64,10 @@
         "video": {
           "method": "POST",
           "path": "/generate/video"
+        },
+        "audio": {
+          "method": "POST",
+          "path": "/generate/audio"
         },
         "marketing-image": {
           "method": "POST",
