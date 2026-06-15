@@ -57,9 +57,10 @@ python3 scripts/artclaw.py generate-image --prompt "A cute kitten" --aspect-rati
 ```
 read_file("~/.artclaw/last_job.json")
 → Verify json["job_id"] matches the submitted job_id
-→ If json["status"] == "success": reply with json["result"]["result_url"] as plain text (e.g. "图片已生成：https://...")
-→ If json["status"] != "success": reply with json.get("error") or "生成失败，请重试"
+→ If json["status"] == "success": reply with json["result"]["result_url"] as plain text (e.g. "Image generated：https://...")
+→ If json["status"] != "success": reply with json.get("error") or "generate failed"
 → Do NOT use MEDIA: prefix — output the raw URL directly so the platform can render it
+→ If the result contains poll_timeout and a job_id, do not submit the generation again
 ```
 
 ### Why last_job.json
@@ -78,6 +79,7 @@ Reading this file is instant, free, and produces no API traffic.
 - `sleep && job-status` polling loop
 - `job-status` in the main turn or in a delegate
 - Using `--no-wait` with this adapter
+- Re-submitting a generation after a `job_id` was already returned
 
 ### Fallback: delegate_task for isolation
 

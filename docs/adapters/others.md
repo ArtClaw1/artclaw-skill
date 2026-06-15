@@ -20,6 +20,7 @@ For generation and workflow commands:
 2. Use `--no-wait` so the CLI submits the job and returns immediately.
 3. If the user explicitly asks to wait, you may omit `--no-wait`.
 4. Return `job_id` to the user along with the `job-status` command to check progress.
+5. If waiting or later polling times out after a `job_id` was returned, do not submit the same generation again automatically.
 
 Submit command form:
 

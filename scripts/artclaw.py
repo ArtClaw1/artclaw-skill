@@ -69,14 +69,18 @@ POLL_PROFILES: Dict[str, dict] = {
     "video":    {"interval": 10, "timeout": 600,  "backoff": 1.5, "max_interval": 30},
     "audio":    {"interval": 10, "timeout": 600,  "backoff": 1.5, "max_interval": 30},
     "workflow": {"interval": 30, "timeout": 1800, "backoff": 1.2, "max_interval": 60},
+    "voice":    {"interval": 3,  "timeout": 120,  "backoff": 1.5, "max_interval": 10},
 }
 
 # Job type inference from subcommand
 JOB_TYPE_MAP = {
     "generate-image": "image",
     "generate-video": "video",
+    "generate-seedance-video": "video",
     "generate-audio": "audio",
     "generate-marketing-image": "image",
+    "stt": "voice",
+    "tts": "voice",
     "run-workflow": "workflow",
 }
 
@@ -431,6 +435,13 @@ def api_generate_image(config: dict, prompt: str, *,
                        aspect_ratio: str = None, resolution: str = None,
                        reference_urls: List[str] = None, model: str = None,
                        callback_url: str = None,
+                       n: int = None, seed: int = None,
+                       quality: str = None, background: str = None,
+                       moderation: str = None, output_format: str = None,
+                       negative_prompt: str = None,
+                       online_search: bool = None,
+                       style: str = None, guidance_scale: float = None,
+                       watermark: bool = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt}
@@ -444,6 +455,28 @@ def api_generate_image(config: dict, prompt: str, *,
         body["model"] = model
     if callback_url:
         body["callback_url"] = callback_url
+    if n is not None and n > 1:
+        body["n"] = n
+    if seed is not None:
+        body["seed"] = seed
+    if quality:
+        body["quality"] = quality
+    if background:
+        body["background"] = background
+    if moderation:
+        body["moderation"] = moderation
+    if output_format:
+        body["output_format"] = output_format
+    if negative_prompt:
+        body["negative_prompt"] = negative_prompt
+    if online_search is not None:
+        body["online_search"] = online_search
+    if style:
+        body["style"] = style
+    if guidance_scale is not None:
+        body["guidance_scale"] = guidance_scale
+    if watermark is not None:
+        body["watermark"] = watermark
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/image",
         api_key=config["apiKey"], json_body=body,
@@ -456,6 +489,7 @@ def api_generate_video(config: dict, prompt: str, *,
                        resolution: str = None,
                        reference_urls: List[str] = None, model: str = None,
                        callback_url: str = None,
+                       generate_audio: bool = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt}
@@ -471,6 +505,8 @@ def api_generate_video(config: dict, prompt: str, *,
         body["model"] = model
     if callback_url:
         body["callback_url"] = callback_url
+    if generate_audio is not None:
+        body["generate_audio"] = generate_audio
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/video",
         api_key=config["apiKey"], json_body=body,
@@ -493,20 +529,152 @@ def api_generate_marketing_image(config: dict, prompt: str, *,
     )
 
 
-def api_generate_audio(config: dict, provider: str, model: str, *,
-                       platform_params: dict = None,
+def api_generate_audio(config: dict, *,
+                       provider: str = "suno", model: str = "V4_5ALL",
+                       prompt: str = "",
+                       instrumental: bool = None, custom_mode: bool = None,
+                       style: str = None, title: str = None,
+                       vocal_gender: str = None, negative_tags: str = None,
+                       style_weight: float = None,
+                       weirdness_constraint: float = None,
+                       audio_weight: float = None, persona_id: str = None,
                        callback_url: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"provider": provider, "model": model}
-    if platform_params:
-        body["platform_params"] = platform_params
+    if prompt:
+        body["prompt"] = prompt
+    if instrumental is not None:
+        body["instrumental"] = instrumental
+    if custom_mode is not None:
+        body["custom_mode"] = custom_mode
+    if style:
+        body["style"] = style
+    if title:
+        body["title"] = title
+    if vocal_gender:
+        body["vocal_gender"] = vocal_gender
+    if negative_tags:
+        body["negative_tags"] = negative_tags
+    if style_weight is not None:
+        body["style_weight"] = style_weight
+    if weirdness_constraint is not None:
+        body["weirdness_constraint"] = weirdness_constraint
+    if audio_weight is not None:
+        body["audio_weight"] = audio_weight
+    if persona_id:
+        body["persona_id"] = persona_id
     if callback_url:
         body["callback_url"] = callback_url
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/audio",
         api_key=config["apiKey"], json_body=body,
         idempotency_key=idempotency_key, dry_run=dry_run,
+    )
+
+
+def api_generate_text(config: dict, prompt: str, *,
+                      model: str = "gemini-3-flash-preview",
+                      provider: str = "gemini",
+                      system_instruction: str = None,
+                      response_format: str = None,
+                      reasoning_effort: str = None,
+                      thinking_level: str = None,
+                      web_search: bool = None,
+                      reference_urls: List[str] = None,
+                      callback_url: str = None,
+                      dry_run: bool = False) -> dict:
+    body: Dict[str, Any] = {"prompt": prompt, "model": model, "provider": provider}
+    if system_instruction:
+        body["system_instruction"] = system_instruction
+    if response_format:
+        body["response_format"] = response_format
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
+    if thinking_level:
+        body["thinking_level"] = thinking_level
+    if web_search is not None:
+        body["web_search"] = web_search
+    if callback_url:
+        body["callback_url"] = callback_url
+    if reference_urls:
+        body["reference_parts"] = [{"type": "image", "url": u} for u in reference_urls]
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/generate/text",
+        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
+    )
+
+
+def api_generate_seedance_video(config: dict, prompt: str, *,
+                                model: str = "doubao-seedance-2-0-260128",
+                                aspect_ratio: str = None, duration: int = None,
+                                resolution: str = None, seed: int = None,
+                                generate_audio: bool = None,
+                                negative_prompt: str = None,
+                                return_last_frame: bool = None,
+                                execution_expires_after: int = None,
+                                safety_identifier: str = None,
+                                priority: int = None,
+                                content_items: List[dict] = None,
+                                callback_url: str = None,
+                                dry_run: bool = False) -> dict:
+    body: Dict[str, Any] = {"prompt": prompt, "model": model}
+    if aspect_ratio:
+        body["aspect_ratio"] = aspect_ratio
+    if duration is not None:
+        body["duration"] = duration
+    if resolution:
+        body["resolution"] = resolution
+    if seed is not None:
+        body["seed"] = seed
+    if generate_audio is not None:
+        body["generate_audio"] = generate_audio
+    if negative_prompt:
+        body["negative_prompt"] = negative_prompt
+    if return_last_frame is not None:
+        body["return_last_frame"] = return_last_frame
+    if execution_expires_after is not None:
+        body["execution_expires_after"] = execution_expires_after
+    if safety_identifier:
+        body["safety_identifier"] = safety_identifier
+    if priority is not None and priority > 0:
+        body["priority"] = priority
+    if content_items:
+        body["content_items"] = content_items
+    if callback_url:
+        body["callback_url"] = callback_url
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/volcengine/video",
+        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
+    )
+
+
+def api_voice_stt(config: dict, audio: str, *,
+                  callback_url: str = None,
+                  dry_run: bool = False) -> dict:
+    """Submit STT async job. Returns job_id immediately. Poll for result."""
+    body: Dict[str, Any] = {"audio": audio}
+    if callback_url:
+        body["callback_url"] = callback_url
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/generate/voice/stt",
+        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
+    )
+
+
+def api_voice_tts(config: dict, text: str, *,
+                  speaker: str = None,
+                  callback_url: str = None,
+                  dry_run: bool = False) -> dict:
+    """Submit TTS async job. Returns job_id immediately. Poll for result."""
+    body: Dict[str, Any] = {"text": text}
+    if speaker:
+        body["speaker"] = speaker
+    if callback_url:
+        body["callback_url"] = callback_url
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/generate/voice/tts",
+        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
     )
 
 
@@ -748,6 +916,13 @@ def _build_delivery_instructions(deliver_to: str, channel: str,
     """Build channel-specific delivery instructions for spawn task."""
     # Determine if this is image or video generation
     is_image = subcommand in ("generate-image", "generate-marketing-image")
+    is_audio = subcommand == "generate-audio"
+
+    if is_audio:
+        return (
+            f"  1. Share the generated audio/BGM URL with \"{deliver_to}\" as a link. "
+            "Native audio upload is not configured in this skill."
+        )
 
     if channel == "feishu":
         if is_image:
@@ -863,7 +1038,9 @@ def build_spawn_task(
         "  Always include a short summary: what was generated, settings used.\n"
         "- If error indicates insufficient credits (402), inform the user and "
         f"guide them to top up at {TOPUP_URL}\n"
-        "- For other failures, report the error and suggest retry."
+        "- If polling times out after a job_id was returned, do not resubmit. "
+        "Tell the user the job is still submitted and use job-status for that job_id.\n"
+        "- For other failures, report the error."
     )
 
     return {
@@ -911,7 +1088,13 @@ def cmd_generate_image(args, config: dict):
     api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "resolution", "model", "callback_url",
+        "n", "seed", "quality", "background", "moderation",
+        "output_format", "negative_prompt", "style", "guidance_scale",
     ]))
+    if getattr(args, "online_search", None):
+        api_kwargs["online_search"] = True
+    if getattr(args, "watermark", None):
+        api_kwargs["watermark"] = True
 
     # Handle spawn mode differently: don't convert files to base64 yet
     if _should_spawn(args):
@@ -966,6 +1149,8 @@ def cmd_generate_video(args, config: dict):
             api_kwargs["reference_urls"] = args.reference_urls
         if getattr(args, "reference_files", None):
             api_kwargs["reference_files"] = args.reference_files
+        if args.no_generate_audio:
+            api_kwargs["no_generate_audio"] = True
 
         result = build_spawn_task(
             "generate-video", api_kwargs,
@@ -974,6 +1159,8 @@ def cmd_generate_video(args, config: dict):
         )
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
+
+    api_kwargs["generate_audio"] = not args.no_generate_audio
 
     # Non-spawn mode: convert reference_files to base64 now
     reference_urls = list(args.reference_urls) if args.reference_urls else []
@@ -1017,21 +1204,18 @@ def cmd_generate_audio(args, config: dict):
     _check_api_key(config, allow_dry_run=dry_run)
 
     api_kwargs: Dict[str, Any] = {
-        "provider": args.provider,
-        "model": args.model,
+        "provider": getattr(args, "provider", "suno") or "suno",
+        "model": getattr(args, "model", "V4_5ALL") or "V4_5ALL",
     }
-
-    if args.platform_params:
-        try:
-            api_kwargs["platform_params"] = json.loads(args.platform_params)
-        except json.JSONDecodeError as e:
-            print(json.dumps({
-                "error": f"--platform-params must be valid JSON: {e}",
-                "hint": 'Example: --platform-params \'{"suno_generate": {"prompt": "a pop song", "custom_mode": false, "instrumental": false}}\'',
-            }), file=sys.stderr)
-            sys.exit(1)
-
-    api_kwargs.update(_collect_optional_args(args, ["callback_url"]))
+    api_kwargs.update(_collect_optional_args(args, [
+        "prompt", "style", "title", "vocal_gender", "negative_tags",
+        "style_weight", "weirdness_constraint", "audio_weight", "persona_id",
+        "callback_url",
+    ]))
+    if getattr(args, "instrumental", None):
+        api_kwargs["instrumental"] = True
+    if getattr(args, "custom_mode", None):
+        api_kwargs["custom_mode"] = True
 
     if _should_spawn(args):
         result = build_spawn_task(
@@ -1047,6 +1231,94 @@ def cmd_generate_audio(args, config: dict):
         no_wait=args.no_wait, dry_run=dry_run,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+# --- Text generation ---
+
+def cmd_generate_text(args, config: dict):
+    """Generate text / chat response from an LLM (sync by default)."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+
+    api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
+    api_kwargs.update(_collect_optional_args(args, [
+        "model", "provider", "system_instruction", "response_format",
+        "reasoning_effort", "thinking_level", "callback_url",
+    ]))
+    if getattr(args, "web_search", None):
+        api_kwargs["web_search"] = True
+    if getattr(args, "reference_urls", None):
+        api_kwargs["reference_urls"] = args.reference_urls
+
+    # Text is sync by default (no polling); only submit_and_poll if async
+    result = api_generate_text(config, **api_kwargs, dry_run=dry_run)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+# --- Seedance 2.0 video ---
+
+def cmd_generate_seedance_video(args, config: dict):
+    """Generate video with Seedance 2.0 exclusive features."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+
+    api_kwargs: Dict[str, Any] = {"prompt": args.prompt,
+                                    "model": getattr(args, "model", "doubao-seedance-2-0-260128")}
+    api_kwargs.update(_collect_optional_args(args, [
+        "aspect_ratio", "duration", "resolution", "seed",
+        "negative_prompt",
+        "execution_expires_after", "safety_identifier", "priority",
+        "callback_url",
+    ]))
+    # 默认生成音频，--no-generate-audio 禁用
+    api_kwargs["generate_audio"] = not args.no_generate_audio
+    if getattr(args, "return_last_frame", None):
+        api_kwargs["return_last_frame"] = True
+
+    result = submit_and_poll(
+        config, "generate-seedance-video", api_generate_seedance_video, api_kwargs,
+        no_wait=args.no_wait, dry_run=dry_run,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+# --- Voice STT / TTS (async) ---
+
+def _cmd_voice_async(args, config: dict, subcommand: str, api_fn, api_kwargs: dict):
+    """Shared async voice handler: submit → poll."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+
+    result = submit_and_poll(
+        config, subcommand, api_fn, api_kwargs,
+        no_wait=args.no_wait, dry_run=dry_run,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_stt(args, config: dict):
+    """Speech-to-text (async). Submit audio → poll for text."""
+    api_kwargs: Dict[str, Any] = {}
+    if getattr(args, "audio_file", None):
+        api_kwargs["audio"] = _file_to_base64(args.audio_file)
+    elif getattr(args, "audio", None):
+        api_kwargs["audio"] = args.audio
+    else:
+        print(json.dumps({"error": "Either --audio or --audio-file is required"}), file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "callback_url", None):
+        api_kwargs["callback_url"] = args.callback_url
+    _cmd_voice_async(args, config, "stt", api_voice_stt, api_kwargs)
+
+
+def cmd_tts(args, config: dict):
+    """Text-to-speech (async). Submit text → poll for audio."""
+    if not getattr(args, "text", None):
+        print(json.dumps({"error": "--text is required"}), file=sys.stderr)
+        sys.exit(1)
+    api_kwargs: Dict[str, Any] = {"text": args.text}
+    api_kwargs.update(_collect_optional_args(args, ["speaker", "callback_url"]))
+    _cmd_voice_async(args, config, "tts", api_voice_tts, api_kwargs)
 
 
 # --- Workflow commands ---
@@ -1491,6 +1763,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reference-files", nargs="+", default=None,
                    help="Reference images (local file paths, auto-converted to base64)")
     p.add_argument("--model", default=None, help="Model ID override")
+    p.add_argument("--n", type=int, default=None, help="Number of images to generate (1-10)")
+    p.add_argument("--seed", type=int, default=None, help="Random seed (null=random)")
+    p.add_argument("--quality", default=None, help="Quality: auto/low/medium/high (gpt-image-2)")
+    p.add_argument("--background", default=None, help="Background: auto/opaque/transparent (gpt-image-2)")
+    p.add_argument("--moderation", default=None, help="Moderation: auto/low (gpt-image-2)")
+    p.add_argument("--output-format", default=None, help="Output format: png/jpeg/webp")
+    p.add_argument("--negative-prompt", default=None, help="Negative prompt")
+    p.add_argument("--online-search", action="store_true", default=False,
+                   help="Enable web search grounding (Gemini)")
+    p.add_argument("--style", default=None, help="Style description")
+    p.add_argument("--guidance-scale", type=float, default=None,
+                   help="Text weight 1-10 (Seedance image models)")
+    p.add_argument("--watermark", action="store_true", default=False,
+                   help="Add explicit watermark (Seedance)")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -1516,6 +1802,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reference-files", nargs="+", default=None,
                    help="Reference images for I2V (local file paths, auto-converted to base64)")
     p.add_argument("--model", default=None, help="Model ID override")
+    p.add_argument("--no-generate-audio", action="store_true", default=False,
+                   help="Disable generated audio/BGM (video audio is enabled by default)")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -1535,13 +1823,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- generate-audio ---
     p = sub.add_parser("generate-audio",
-                       help="Generate audio (music, sound effects) via multi-platform providers")
-    p.add_argument("--provider", required=True,
-                   help="Audio provider: suno, kling, minimax, etc.")
-    p.add_argument("--model", required=True,
-                   help="Model ID (e.g. V4_5ALL for suno, kling_audio for kling)")
-    p.add_argument("--platform-params", default=None,
-                   help='Platform-specific params as JSON string (e.g. \'{"suno_generate": {"prompt": "a pop song", "custom_mode": false, "instrumental": false}}\')')
+                       help="Generate standalone audio/BGM")
+    p.add_argument("--prompt", default=None, help="Music description or lyrics")
+    p.add_argument("--provider", default="suno", help="Audio provider (default: suno)")
+    p.add_argument("--model", default="V4_5ALL", help="Model ID (default: V4_5ALL)")
+    p.add_argument("--instrumental", action="store_true", default=False,
+                   help="Instrumental only, no vocals")
+    p.add_argument("--custom-mode", action="store_true", default=False,
+                   help="Custom mode for precise control")
+    p.add_argument("--style", default=None, help="Music style: pop, rock, jazz, etc.")
+    p.add_argument("--title", default=None, help="Music title")
+    p.add_argument("--vocal-gender", default=None, choices=["m", "f"],
+                   help="Vocal gender: m/f")
+    p.add_argument("--negative-tags", default=None, help="Style tags to exclude")
+    p.add_argument("--style-weight", type=float, default=None, help="Style weight 0-1")
+    p.add_argument("--weirdness-constraint", type=float, default=None,
+                   help="Weirdness constraint 0-1")
+    p.add_argument("--audio-weight", type=float, default=None, help="Audio weight 0-1")
+    p.add_argument("--persona-id", default=None, help="Persona ID for voice cloning")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -1549,6 +1848,71 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--deliver-channel", default=None,
                    choices=["feishu", "telegram", "discord"],
                    help="Delivery channel — used with --spawn")
+    _add_wait_and_dry_run(p)
+
+    # --- generate-text ---
+    p = sub.add_parser("generate-text", help="Generate text / chat response from an LLM")
+    p.add_argument("--prompt", required=True, help="Text prompt / instruction")
+    p.add_argument("--model", default="gemini-3-flash-preview",
+                   help="Model ID (default: gemini-3-flash-preview)")
+    p.add_argument("--provider", default="gemini",
+                   choices=["gemini", "openai", "deepseek"],
+                   help="LLM provider (default: gemini)")
+    p.add_argument("--system-instruction", default=None, help="System prompt")
+    p.add_argument("--response-format", default=None,
+                   choices=["text", "json_object"], help="Output format")
+    p.add_argument("--reasoning-effort", default=None,
+                   choices=["minimal", "low", "medium", "high", "xhigh"],
+                   help="OpenAI reasoning depth")
+    p.add_argument("--thinking-level", default=None,
+                   choices=["low", "medium", "high"],
+                   help="Gemini thinking depth")
+    p.add_argument("--web-search", action="store_true", default=False,
+                   help="Enable web search grounding (Gemini)")
+    p.add_argument("--reference-urls", nargs="+", default=None,
+                   help="Multimodal reference (image/video/audio URLs)")
+    p.add_argument("--callback-url", default=None,
+                   help="If set, makes generation async → returns job_id")
+    _add_dry_run(p)
+
+    # --- generate-seedance-video ---
+    p = sub.add_parser("generate-seedance-video",
+                       help="Generate video with Seedance 2.0 exclusive features")
+    p.add_argument("--prompt", required=True, help="Video description")
+    p.add_argument("--model", default="doubao-seedance-2-0-260128",
+                   choices=["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128"],
+                   help="Seedance 2.0 model")
+    p.add_argument("--aspect-ratio", default="16:9",
+                   choices=["1:1", "3:4", "4:3", "9:16", "16:9", "21:9"],
+                   help="Aspect ratio")
+    p.add_argument("--duration", type=int, default=5, help="Duration in seconds (4-15)")
+    p.add_argument("--resolution", default="720p",
+                   choices=["480p", "720p", "1080p"],
+                   help="Resolution")
+    p.add_argument("--seed", type=int, default=None, help="Random seed")
+    p.add_argument("--no-generate-audio", action="store_true", default=False,
+                   help="Disable audio generation")
+    p.add_argument("--negative-prompt", default=None, help="Negative prompt")
+    p.add_argument("--return-last-frame", action="store_true", default=False,
+                   help="Return the generated video's last frame image")
+    p.add_argument("--execution-expires-after", type=int, default=None,
+                   help="Task timeout in seconds (3600-259200)")
+    p.add_argument("--safety-identifier", default=None,
+                   help="End-user unique identifier for safety monitoring")
+    p.add_argument("--priority", type=int, default=0, help="Execution priority 0-9")
+    _add_wait_and_dry_run(p)
+
+    # --- stt (voice → text) ---
+    p = sub.add_parser("stt", help="Speech-to-text (async) — submit audio, poll for text")
+    p.add_argument("--audio", default=None, help="Base64 audio data (data:audio/wav;base64,...)")
+    p.add_argument("--audio-file", default=None, help="Local audio file (auto-converted to base64)")
+    _add_wait_and_dry_run(p)
+
+    # --- tts (text → voice) ---
+    p = sub.add_parser("tts", help="Text-to-speech (async) — submit text, poll for audio")
+    p.add_argument("--text", required=True, help="Text to synthesize")
+    p.add_argument("--speaker", default="en_male_tim_uranus_bigtts",
+                   help="Speaker ID (default: en_male_tim_uranus_bigtts)")
     _add_wait_and_dry_run(p)
 
     # --- list-workflows ---
@@ -1694,8 +2058,12 @@ def build_parser() -> argparse.ArgumentParser:
 COMMAND_MAP = {
     "generate-image": cmd_generate_image,
     "generate-video": cmd_generate_video,
+    "generate-seedance-video": cmd_generate_seedance_video,
     "generate-audio": cmd_generate_audio,
+    "generate-text": cmd_generate_text,
     "generate-marketing-image": cmd_generate_marketing_image,
+    "stt": cmd_stt,
+    "tts": cmd_tts,
     "list-workflows": cmd_list_workflows,
     "run-workflow": cmd_run_workflow,
     "analyze-image": cmd_analyze_image,
@@ -1753,8 +2121,10 @@ def main():
             "elapsed_seconds": round(e.elapsed),
             "last_status": e.last_status,
             "message": (f"Job timed out after {round(e.elapsed)}s. "
-                        f"Check with: artclaw.py job-status --job-id {e.job_id}"),
-            "retryable": True,
+                        f"Check with: artclaw.py job-status --job-id {e.job_id}. "
+                        "Do not resubmit the same generation automatically."),
+            "retryable": False,
+            "do_not_resubmit": True,
         }, indent=2), file=sys.stderr)
         sys.exit(1)
     except ArtClawPollFailed as e:

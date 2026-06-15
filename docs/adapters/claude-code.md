@@ -32,6 +32,7 @@ Example Bash tool input:
 4. The user can inspect it with `/tasks`.
 5. **DO NOT manually poll with `job-status` after the background task completes.** The background task already polls internally and returns the final result in its output. When the background task completes, use the `Read` tool to read the output file path (provided in the task completion notification) to get the final result JSON.
 6. **The background task output contains the complete result** including `status: "success"` and the media URL. No further polling is needed.
+7. If the output contains `poll_timeout` and a `job_id`, do not rerun the generation command. Track the existing `job_id` instead.
 
 **Do not use `TaskOutput` to check or wait for task status.** Claude Code automatically notifies the agent when the background task finishes. After submission, simply tell the user the task was started and wait for the automatic notification.
 
@@ -43,5 +44,6 @@ Example Bash tool input:
 2. Immediately tell the user the job has been submitted and include the `job_id`.
 3. Use `job-status` or `last-job` only for follow-up when the user asks.
 4. Do not tell the user this created a Claude Code background task; it did not.
+5. If follow-up polling times out after a `job_id` was returned, do not submit a new generation request automatically.
 
 Analysis commands are synchronous and may run normally.

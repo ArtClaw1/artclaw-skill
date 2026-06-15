@@ -1,8 +1,8 @@
 {
   "name": "artclaw-creative-suite",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "displayName": "ARTCLAW AI Creative Suite",
-  "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation, workflow execution, multimodal analysis, and more.",
+  "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, workflow execution, multimodal analysis, model selection guidance, and more.",
   "author": {
     "name": "ARTCLAW Team",
     "url": "https://artclaw.com/"
@@ -13,13 +13,21 @@
     "image-generation",
     "video-generation",
     "audio-generation",
+    "bgm",
+    "background-music",
+    "model-selection",
+    "text-generation",
+    "voice-stt",
+    "voice-tts",
     "rest-api",
     "artclaw",
     "marketing",
     "creative",
     "text-to-image",
     "text-to-video",
-    "ai-painting"
+    "ai-painting",
+    "virtual-human",
+    "asset-library"
   ],
   "skill": "SKILL.md",
   "main": "__init__.py",
@@ -65,13 +73,106 @@
           "method": "POST",
           "path": "/generate/video"
         },
+        "seedance-video": {
+          "method": "POST",
+          "path": "/volcengine/video",
+          "description": "Seedance 2.0 exclusive video generation with return_last_frame, priority, safety_identifier"
+        },
+        "seedance-tasks-get": {
+          "method": "GET",
+          "path": "/volcengine/video/tasks/{task_id}"
+        },
+        "seedance-tasks-cancel": {
+          "method": "POST",
+          "path": "/volcengine/video/tasks/{task_id}/cancel"
+        },
+        "seedance-tasks-list": {
+          "method": "GET",
+          "path": "/volcengine/video/tasks"
+        },
         "audio": {
           "method": "POST",
           "path": "/generate/audio"
         },
+        "text": {
+          "method": "POST",
+          "path": "/generate/text",
+          "description": "Text generation (sync by default, async with callback_url)"
+        },
+        "text-chat-create": {
+          "method": "POST",
+          "path": "/generate/text/chat"
+        },
+        "text-chat-message": {
+          "method": "POST",
+          "path": "/generate/text/chat/{chat_id}/message"
+        },
+        "text-chat-history": {
+          "method": "GET",
+          "path": "/generate/text/chat/{chat_id}/history"
+        },
         "marketing-image": {
           "method": "POST",
           "path": "/generate/marketing-image"
+        }
+      },
+      "voice": {
+        "stt": {
+          "method": "POST",
+          "path": "/generate/voice/stt",
+          "mode": "async",
+          "description": "Speech-to-text (async). Submit with audio base64, returns job_id. Poll GET /jobs/{job_id} for result."
+        },
+        "tts": {
+          "method": "POST",
+          "path": "/generate/voice/tts",
+          "mode": "async",
+          "description": "Text-to-speech (async). Submit with text, returns job_id. Poll GET /jobs/{job_id} for result."
+        }
+      },
+      "assets": {
+        "description": "Volcengine Ark virtual human asset library under /volcengine. All POST, all authenticated.",
+        "group-create": {
+          "method": "POST",
+          "path": "/volcengine/assets/groups/create"
+        },
+        "group-list": {
+          "method": "POST",
+          "path": "/volcengine/assets/groups/list"
+        },
+        "group-get": {
+          "method": "POST",
+          "path": "/volcengine/assets/groups/get"
+        },
+        "group-update": {
+          "method": "POST",
+          "path": "/volcengine/assets/groups/update"
+        },
+        "group-delete": {
+          "method": "POST",
+          "path": "/volcengine/assets/groups/delete"
+        },
+        "create": {
+          "method": "POST",
+          "path": "/volcengine/assets/create",
+          "mode": "async",
+          "description": "Upload asset (async). Returns Asset ID, poll until Status=Active."
+        },
+        "list": {
+          "method": "POST",
+          "path": "/volcengine/assets/list"
+        },
+        "get": {
+          "method": "POST",
+          "path": "/volcengine/assets/get"
+        },
+        "update": {
+          "method": "POST",
+          "path": "/volcengine/assets/update"
+        },
+        "delete": {
+          "method": "POST",
+          "path": "/volcengine/assets/delete"
         }
       },
       "analyze": {
