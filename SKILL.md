@@ -2,10 +2,10 @@
 name: artclaw-creative-suite
 description: |
   ARTCLAW AI Creative Suite - invoke ARTCLAW platform's AI content creation capabilities via CLI.
-  Supports AI image generation, video generation, workflow execution, multimodal analysis, and job management.
+  Supports AI image generation, video generation with optional BGM/audio, audio/BGM generation, workflow execution, multimodal analysis, model selection guidance, and job management.
   All generation commands must run asynchronously using the current platform adapter. Requires an API Key prefixed with vk_ for authenticated features.
-  Trigger keywords: generate image, generate video, AI painting, text-to-image, text-to-video, image-to-video, marketing image,
-  logo, cover, workflow, video analysis, image analysis, ARTCLAW, ArtClaw.
+  Trigger keywords: generate image, generate video, BGM, background music, audio generation, AI painting, text-to-image, text-to-video, image-to-video, marketing image,
+  logo, cover, workflow, video analysis, image analysis, model list, switch model, ARTCLAW, ArtClaw.
 compatibility:
   dependencies:
     - ARTCLAW REST API (https://artclaw.com/api/v1)
@@ -56,6 +56,9 @@ If platform detection is ambiguous, ask the user which platform they are using. 
 9. Guide users to https://artclaw.com/settings for API key creation and credit top-up.
 10. Deliver generated media as native platform messages when the adapter supports it; otherwise return the result URL and job metadata.
 11. Platform-specific async behavior, delivery semantics, and anti-blocking rules must be defined only in the selected adapter document under `docs/adapters/` and followed strictly.
+12. Mention only the relevant default/switchable models before generation.
+13. Answer model questions from `Capability and Model Defaults`; do not use CLI help or API calls for model lists.
+14. For batch video generation, never resubmit an item after a `job_id` was returned. If polling times out or the agent is interrupted, continue with `job-status`, `last-job`, or `history` for the existing `job_id`.
 
 ---
 
@@ -103,6 +106,35 @@ Safe default:
 - Other non-spawn adapters use `--no-wait` — unless the adapter defines its own background strategy (e.g. Hermes uses background terminal; see adapter doc).
 - Only omit both when the user explicitly asks the agent to wait for completion.
 
+### User Guidance
+
+After a successful `verify-key` with no concrete generation request yet, show this startup greeting.
+
+Startup greeting template:
+
+```text
+ARTCLAW is ready. I can generate:
+- Images: default `doubao-seedream-5-0-260128`; switch to `youchuan-v-7` for realistic style or `youchuan-niji-7` for anime.
+- Videos: default `doubao-seedance-2-0-260128`; switch to `doubao-seedance-2-0-fast-260128` for speed. Dreamina, Seedance 1.5, Kling, Vidu, and HappyHorse models are also available.
+- BGM/audio: use `generate-audio` with Suno `V4_5ALL`.
+
+Tell me whether you want an image, video, or BGM/audio. If you do not specify a model, I will use the default.
+```
+
+For concrete generation requests, mention the relevant default once and run with defaults unless the user chooses a model.
+
+Use `generate-video` for a video with BGM. Use `generate-audio` for standalone BGM/audio.
+
+### Capability and Model Defaults
+
+Use this table for default and switchable models.
+
+| Media type | Default | Switchable models | Notes |
+| --- | --- | --- | --- |
+| Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `youchuan-v-7`, `youchuan-niji-7` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. |
+| Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-260128`, `dreamina-seedance-2-0-fast-260128`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
+| Audio/BGM | `suno` + `V4_5ALL` | `V4_5ALL` | Use `generate-audio` for standalone music/BGM. |
+
 ### Generate Image
 
 ```bash
@@ -128,7 +160,7 @@ python3 scripts/artclaw.py generate-image \
 | `--resolution` | Resolution | `1K`, `2K`, `4K` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference files, auto-converted to base64 | One or more paths |
-| `--model` | Model override | Model ID |
+| `--model` | Model override | `doubao-seedream-5-0-260128` (default), `youchuan-v-7`, `youchuan-niji-7` |
 
 ### Generate Video
 
@@ -158,7 +190,8 @@ python3 scripts/artclaw.py generate-video \
 | `--resolution` | Resolution | `480p`, `720p`, `1080p` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference image files, auto-converted | One or more paths |
-| `--model` | Model override | Model ID |
+| `--model` | Model override | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-260128`, `dreamina-seedance-2-0-fast-260128`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0` |
+| `--no-generate-audio` | Disable generated audio/BGM | Flag (default off; video audio/BGM is on by default) |
 
 ### Generate Marketing Image
 
@@ -168,6 +201,86 @@ python3 scripts/artclaw.py generate-marketing-image \
   --size 1080x1920 \
   --no-wait
 ```
+
+### Generate Audio
+
+```bash
+python3 scripts/artclaw.py generate-audio \
+  --prompt "A cheerful pop song about summer" \
+  --provider suno \
+  --model V4_5ALL \
+  --style pop \
+  --no-wait
+```
+
+| Parameter | Description | Values |
+| --- | --- | --- |
+| `--prompt` | Music description or lyrics, required | Text |
+| `--provider` | Audio platform provider | `suno` (default) |
+| `--model` | Model ID | `V4_5ALL` (default) |
+| `--instrumental` | Instrumental only, no vocals | Flag (default off) |
+| `--custom-mode` | Custom mode for precise control | Flag (default off) |
+| `--style` | Music style | `pop`, `rock`, `jazz`, etc. |
+| `--title` | Music title | Text |
+| `--vocal-gender` | Vocal gender | `m`, `f` |
+| `--negative-tags` | Style tags to exclude | Text |
+| `--style-weight` | Style weight (0-1) | Float |
+| `--weirdness-constraint` | Weirdness (0-1) | Float |
+| `--audio-weight` | Audio weight (0-1) | Float |
+| `--persona-id` | Persona ID for voice cloning | Text |
+
+### Generate Text
+
+```bash
+python3 scripts/artclaw.py generate-text \
+  --prompt "Explain quantum computing in simple terms" \
+  --model gemini-3-flash-preview
+```
+
+Sync mode (default) returns text directly. Add `--callback-url` for async job mode.
+
+```bash
+python3 scripts/artclaw.py generate-text \
+  --prompt "Describe this image" \
+  --reference-urls https://example.com/photo.jpg \
+  --provider gemini \
+  --web-search
+```
+
+| Parameter | Description | Values |
+| --- | --- | --- |
+| `--prompt` | Text prompt, required | Text |
+| `--model` | Model ID | `gemini-3-flash-preview` (default), `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `deepseek-chat` |
+| `--provider` | LLM provider | `gemini` (default), `openai`, `deepseek` |
+| `--system-instruction` | System prompt | Text |
+| `--response-format` | Output format | `text` (default), `json_object` |
+| `--reasoning-effort` | OpenAI reasoning depth | `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `--thinking-level` | Gemini thinking depth | `low`, `medium`, `high` |
+| `--web-search` | Enable web grounding | Flag (Gemini only) |
+| `--reference-urls` | Multimodal reference (image/video/audio) | One or more URLs |
+
+### Voice STT / TTS (Async)
+
+Voice endpoints are **asynchronous**. Submit with audio/text → receive `job_id` → poll for result.
+
+```bash
+# Speech-to-Text
+python3 scripts/artclaw.py stt --audio "data:audio/wav;base64,..."
+python3 scripts/artclaw.py stt --audio-file ./recording.wav
+
+# Text-to-Speech
+python3 scripts/artclaw.py tts --text "Hello, welcome to VICOO."
+python3 scripts/artclaw.py tts --text "你好" --speaker zh_female_shuangkuaishu_moon_bigtts
+```
+
+| Parameter | Description | Values |
+| --- | --- | --- |
+| `--audio` | Base64 audio data (STT) | `data:audio/wav;base64,...` or raw base64 |
+| `--audio-file` | Local audio file, auto-converted (STT) | Path |
+| `--text` | Text to synthesize (TTS), required | Text |
+| `--speaker` | Speaker ID (TTS) | `en_male_tim_uranus_bigtts` (default), `zh_female_shuangkuaishu_moon_bigtts` |
+
+Voice jobs use polling profile: interval 3s, timeout 120s.
 
 ### Execute Workflow
 
@@ -234,10 +347,13 @@ python3 scripts/artclaw.py history --limit 50
 
 Use `job-status`, `last-job`, and `history` for follow-up instead of resubmitting generation requests. There is no `latest-job` command.
 
+If a generation command returns `poll_timeout`, the job was already submitted. Do not rerun the same generation command automatically. Use the returned `job_id` with `job-status` and tell the user the existing job is still being tracked.
+
 | Error | Cause | Resolution |
 | --- | --- | --- |
 | `401 Unauthorized` | API key invalid, missing, or revoked | Guide user to regenerate the key |
 | `402` / insufficient credits | Account balance depleted | Guide user to top up at https://artclaw.com/settings |
+| `404 Voice job not found` | Job ID does not exist or expired | Voice jobs have shorter TTL; re-submit |
 | `404 Job not found` | Job ID does not exist or expired after 24h | Tell user the job expired and ask whether to regenerate |
 | `404 Workflow not found` | Workflow does not exist | Run `list-workflows` first |
 | `429 Too Many Requests` | Rate limit exceeded | Wait and retry |

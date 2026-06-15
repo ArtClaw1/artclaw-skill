@@ -22,6 +22,6 @@ Flow:
 4. Pass `sessions_spawn_args` to `sessions_spawn`.
 5. Immediately tell the user the job has been submitted.
 6. Do not wait silently in the main agent.
+7. If a spawned worker reports `poll_timeout` with a `job_id`, do not spawn the same generation again; track that existing job.
 
 Do not use `--spawn` for analysis commands.
-
