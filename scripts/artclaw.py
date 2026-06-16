@@ -530,7 +530,7 @@ def api_generate_marketing_image(config: dict, prompt: str, *,
 
 
 def api_generate_audio(config: dict, *,
-                       provider: str = "suno", model: str = "V4_5ALL",
+                       provider: str = "suno", model: str = "Suvo V4.5 ALL",
                        prompt: str = "",
                        instrumental: bool = None, custom_mode: bool = None,
                        style: str = None, title: str = None,
@@ -574,7 +574,7 @@ def api_generate_audio(config: dict, *,
 
 
 def api_generate_text(config: dict, prompt: str, *,
-                      model: str = "gemini-3-flash-preview",
+                      model: str = "Gemi 3.0 Flash",
                       provider: str = "gemini",
                       system_instruction: str = None,
                       response_format: str = None,
@@ -602,6 +602,17 @@ def api_generate_text(config: dict, prompt: str, *,
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/text",
         api_key=config["apiKey"], json_body=body, dry_run=dry_run,
+    )
+
+
+def api_remove_bg(config: dict, image_base64: str, *,
+                  dry_run: bool = False) -> dict:
+    """Remove background from an image. Returns job_id immediately."""
+    body: Dict[str, Any] = {"image_base64": image_base64}
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/generate/remove-bg",
+        api_key=config["apiKey"], json_body=body,
+        dry_run=dry_run,
     )
 
 
@@ -1205,7 +1216,7 @@ def cmd_generate_audio(args, config: dict):
 
     api_kwargs: Dict[str, Any] = {
         "provider": getattr(args, "provider", "suno") or "suno",
-        "model": getattr(args, "model", "V4_5ALL") or "V4_5ALL",
+        "model": getattr(args, "model", "Suvo V4.5 ALL") or "Suvo V4.5 ALL",
     }
     api_kwargs.update(_collect_optional_args(args, [
         "prompt", "style", "title", "vocal_gender", "negative_tags",
@@ -1455,6 +1466,16 @@ def cmd_account_info(args, config: dict):
                               dry_run=getattr(args, "dry_run", False))
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
+
+
+def cmd_remove_bg(args, config: dict):
+    """Remove background from an image."""
+    _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
+    if not args.image:
+        print(json.dumps({"error": "Must provide --image (base64)"}), file=sys.stderr)
+        sys.exit(1)
+    result = api_remove_bg(config, args.image, dry_run=getattr(args, "dry_run", False))
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 def cmd_verify_key(args, config: dict):
     """Verify an API key is valid (no auth required)."""
@@ -1765,9 +1786,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default=None, help="Model ID override")
     p.add_argument("--n", type=int, default=None, help="Number of images to generate (1-10)")
     p.add_argument("--seed", type=int, default=None, help="Random seed (null=random)")
-    p.add_argument("--quality", default=None, help="Quality: auto/low/medium/high (gpt-image-2)")
-    p.add_argument("--background", default=None, help="Background: auto/opaque/transparent (gpt-image-2)")
-    p.add_argument("--moderation", default=None, help="Moderation: auto/low (gpt-image-2)")
+    p.add_argument("--quality", default=None, help="Quality: auto/low/medium/high (GT-Image-2)")
+    p.add_argument("--background", default=None, help="Background: auto/opaque/transparent (GT-Image-2)")
+    p.add_argument("--moderation", default=None, help="Moderation: auto/low (GT-Image-2)")
     p.add_argument("--output-format", default=None, help="Output format: png/jpeg/webp")
     p.add_argument("--negative-prompt", default=None, help="Negative prompt")
     p.add_argument("--online-search", action="store_true", default=False,
@@ -1826,7 +1847,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Generate standalone audio/BGM")
     p.add_argument("--prompt", default=None, help="Music description or lyrics")
     p.add_argument("--provider", default="suno", help="Audio provider (default: suno)")
-    p.add_argument("--model", default="V4_5ALL", help="Model ID (default: V4_5ALL)")
+    p.add_argument("--model", default="Suvo V4.5 ALL", help="Model name (default: Suvo V4.5 ALL)")
     p.add_argument("--instrumental", action="store_true", default=False,
                    help="Instrumental only, no vocals")
     p.add_argument("--custom-mode", action="store_true", default=False,
@@ -1850,11 +1871,18 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Delivery channel — used with --spawn")
     _add_wait_and_dry_run(p)
 
+
+    # --- remove-bg ---
+    p = sub.add_parser("remove-bg", help="Remove background from an image")
+    p.add_argument("--image", default=None, help="Base64-encoded image data")
+    
+    _add_common_args(p)
+
     # --- generate-text ---
     p = sub.add_parser("generate-text", help="Generate text / chat response from an LLM")
     p.add_argument("--prompt", required=True, help="Text prompt / instruction")
-    p.add_argument("--model", default="gemini-3-flash-preview",
-                   help="Model ID (default: gemini-3-flash-preview)")
+    p.add_argument("--model", default="Gemi 3.0 Flash",
+                   help="Model name (default: Gemi 3.0 Flash)")
     p.add_argument("--provider", default="gemini",
                    choices=["gemini", "openai", "deepseek"],
                    help="LLM provider (default: gemini)")
@@ -2056,6 +2084,7 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 COMMAND_MAP = {
+    "remove-bg": cmd_remove_bg,
     "generate-image": cmd_generate_image,
     "generate-video": cmd_generate_video,
     "generate-seedance-video": cmd_generate_seedance_video,
