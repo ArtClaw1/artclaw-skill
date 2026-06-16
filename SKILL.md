@@ -116,7 +116,7 @@ Startup greeting template:
 ARTCLAW is ready. I can generate:
 - Images: default `doubao-seedream-5-0-260128`; switch to `youchuan-v-7` for realistic style or `youchuan-niji-7` for anime.
 - Videos: default `doubao-seedance-2-0-260128`; switch to `doubao-seedance-2-0-fast-260128` for speed. Dreamina, Seedance 1.5, Kling, Vidu, and HappyHorse models are also available.
-- BGM/audio: use `generate-audio` with Suno `V4_5ALL`.
+- BGM/audio: use `generate-audio` with Suno `Suvo V4.5 ALL`.
 
 Tell me whether you want an image, video, or BGM/audio. If you do not specify a model, I will use the default.
 ```
@@ -133,7 +133,25 @@ Use this table for default and switchable models.
 | --- | --- | --- | --- |
 | Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `youchuan-v-7`, `youchuan-niji-7` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. |
 | Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-260128`, `dreamina-seedance-2-0-fast-260128`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
-| Audio/BGM | `suno` + `V4_5ALL` | `V4_5ALL` | Use `generate-audio` for standalone music/BGM. |
+
+### Remove Background (`remove-bg`)
+
+Remove the background from an image using AI.
+
+```
+artclaw remove-bg --image "base64_data"
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+|  | string | Yes | Base64-encoded image data |
+
+Example:
+
+
+Returns a  — use  to check progress. When complete, the result includes the URL of the background-removed image.
+
+| Audio/BGM | `suno` + `Suvo V4.5 ALL` | `Suvo V4.5 ALL` | Use `generate-audio` for standalone music/BGM. |
 
 ### Generate Image
 
@@ -208,7 +226,7 @@ python3 scripts/artclaw.py generate-marketing-image \
 python3 scripts/artclaw.py generate-audio \
   --prompt "A cheerful pop song about summer" \
   --provider suno \
-  --model V4_5ALL \
+  --model Suvo V4.5 ALL \
   --style pop \
   --no-wait
 ```
@@ -217,7 +235,7 @@ python3 scripts/artclaw.py generate-audio \
 | --- | --- | --- |
 | `--prompt` | Music description or lyrics, required | Text |
 | `--provider` | Audio platform provider | `suno` (default) |
-| `--model` | Model ID | `V4_5ALL` (default) |
+| `--model` | Model ID | `Suvo V4.5 ALL` (default) |
 | `--instrumental` | Instrumental only, no vocals | Flag (default off) |
 | `--custom-mode` | Custom mode for precise control | Flag (default off) |
 | `--style` | Music style | `pop`, `rock`, `jazz`, etc. |
@@ -234,7 +252,7 @@ python3 scripts/artclaw.py generate-audio \
 ```bash
 python3 scripts/artclaw.py generate-text \
   --prompt "Explain quantum computing in simple terms" \
-  --model gemini-3-flash-preview
+  --model Gemi 3.0 Flash
 ```
 
 Sync mode (default) returns text directly. Add `--callback-url` for async job mode.
@@ -250,7 +268,7 @@ python3 scripts/artclaw.py generate-text \
 | Parameter | Description | Values |
 | --- | --- | --- |
 | `--prompt` | Text prompt, required | Text |
-| `--model` | Model ID | `gemini-3-flash-preview` (default), `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `deepseek-chat` |
+| `--model` | Model ID | `Gemi 3.0 Flash` (default), `Gemi 3.5 Flash`, `Gemi 3.1 Pro`, `deepseek-chat` |
 | `--provider` | LLM provider | `gemini` (default), `openai`, `deepseek` |
 | `--system-instruction` | System prompt | Text |
 | `--response-format` | Output format | `text` (default), `json_object` |
