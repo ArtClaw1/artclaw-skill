@@ -78,7 +78,6 @@ JOB_TYPE_MAP = {
     "generate-video": "video",
     "generate-seedance-video": "video",
     "generate-audio": "audio",
-    "generate-marketing-image": "image",
     "stt": "voice",
     "tts": "voice",
     "run-workflow": "workflow",
@@ -436,10 +435,8 @@ def api_generate_image(config: dict, prompt: str, *,
                        reference_urls: List[str] = None, model: str = None,
                        callback_url: str = None,
                        n: int = None, seed: int = None,
-                       quality: str = None, background: str = None,
-                       moderation: str = None, output_format: str = None,
+                       output_format: str = None,
                        negative_prompt: str = None,
-                       online_search: bool = None,
                        style: str = None, guidance_scale: float = None,
                        watermark: bool = None,
                        idempotency_key: str = None,
@@ -459,18 +456,10 @@ def api_generate_image(config: dict, prompt: str, *,
         body["n"] = n
     if seed is not None:
         body["seed"] = seed
-    if quality:
-        body["quality"] = quality
-    if background:
-        body["background"] = background
-    if moderation:
-        body["moderation"] = moderation
     if output_format:
         body["output_format"] = output_format
     if negative_prompt:
         body["negative_prompt"] = negative_prompt
-    if online_search is not None:
-        body["online_search"] = online_search
     if style:
         body["style"] = style
     if guidance_scale is not None:
@@ -511,21 +500,6 @@ def api_generate_video(config: dict, prompt: str, *,
         "POST", f"{config['baseUrl']}/generate/video",
         api_key=config["apiKey"], json_body=body,
         idempotency_key=idempotency_key, dry_run=dry_run,
-    )
-
-
-def api_generate_marketing_image(config: dict, prompt: str, *,
-                                 size: str = None,
-                                 callback_url: str = None,
-                                 dry_run: bool = False) -> dict:
-    body: Dict[str, Any] = {"prompt": prompt}
-    if size:
-        body["size"] = size
-    if callback_url:
-        body["callback_url"] = callback_url
-    return _request_with_retry(
-        "POST", f"{config['baseUrl']}/generate/marketing-image",
-        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
     )
 
 
@@ -574,14 +548,10 @@ def api_generate_audio(config: dict, *,
 
 
 def api_generate_text(config: dict, prompt: str, *,
-                      model: str = "Gemi 3.0 Flash",
-                      provider: str = "gemini",
+                      model: str = "deepseek-v4-pro",
+                      provider: str = "deepseek",
                       system_instruction: str = None,
                       response_format: str = None,
-                      reasoning_effort: str = None,
-                      thinking_level: str = None,
-                      web_search: bool = None,
-                      reference_urls: List[str] = None,
                       callback_url: str = None,
                       dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt, "model": model, "provider": provider}
@@ -589,16 +559,8 @@ def api_generate_text(config: dict, prompt: str, *,
         body["system_instruction"] = system_instruction
     if response_format:
         body["response_format"] = response_format
-    if reasoning_effort:
-        body["reasoning_effort"] = reasoning_effort
-    if thinking_level:
-        body["thinking_level"] = thinking_level
-    if web_search is not None:
-        body["web_search"] = web_search
     if callback_url:
         body["callback_url"] = callback_url
-    if reference_urls:
-        body["reference_parts"] = [{"type": "image", "url": u} for u in reference_urls]
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/text",
         api_key=config["apiKey"], json_body=body, dry_run=dry_run,
@@ -621,17 +583,20 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
                                 aspect_ratio: str = None, duration: int = None,
                                 resolution: str = None, seed: int = None,
                                 generate_audio: bool = None,
-                                negative_prompt: str = None,
                                 return_last_frame: bool = None,
                                 execution_expires_after: int = None,
                                 safety_identifier: str = None,
                                 priority: int = None,
-                                content_items: List[dict] = None,
                                 callback_url: str = None,
                                 dry_run: bool = False) -> dict:
-    body: Dict[str, Any] = {"prompt": prompt, "model": model}
+    # 后端 /volcengine/video 对齐 Ark 官方 API：prompt 必须放在 content[] 数组里，
+    # 参考图为 {"type":"image_url","image_url":{"url":...},"role":...}。顶层 prompt 会被忽略。
+    body: Dict[str, Any] = {
+        "content": [{"type": "text", "text": prompt}],
+        "model": model,
+    }
     if aspect_ratio:
-        body["aspect_ratio"] = aspect_ratio
+        body["ratio"] = aspect_ratio
     if duration is not None:
         body["duration"] = duration
     if resolution:
@@ -640,8 +605,6 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
         body["seed"] = seed
     if generate_audio is not None:
         body["generate_audio"] = generate_audio
-    if negative_prompt:
-        body["negative_prompt"] = negative_prompt
     if return_last_frame is not None:
         body["return_last_frame"] = return_last_frame
     if execution_expires_after is not None:
@@ -650,8 +613,6 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
         body["safety_identifier"] = safety_identifier
     if priority is not None and priority > 0:
         body["priority"] = priority
-    if content_items:
-        body["content_items"] = content_items
     if callback_url:
         body["callback_url"] = callback_url
     return _request_with_retry(
@@ -710,54 +671,6 @@ def api_run_workflow(config: dict, workflow_id: str, inputs: dict, *,
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/workflows/{workflow_id}/run",
         api_key=config["apiKey"], json_body=body, dry_run=dry_run,
-    )
-
-
-# --- Analysis (sync, returns result directly) ---
-
-def api_analyze_image(config: dict, reference_urls: List[str], *,
-                      query: str = "", dry_run: bool = False) -> dict:
-    body: Dict[str, Any] = {"image_urls": reference_urls}
-    if query:
-        body["query"] = query
-    return _request_with_retry(
-        "POST", f"{config['baseUrl']}/analyze/image",
-        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
-    )
-
-
-def api_analyze_video(config: dict, reference_urls: List[str], *,
-                      query: str = "", dry_run: bool = False) -> dict:
-    body: Dict[str, Any] = {"video_url": reference_urls[0]}
-    if query:
-        body["query"] = query
-    return _request_with_retry(
-        "POST", f"{config['baseUrl']}/analyze/video",
-        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
-    )
-
-
-def api_analyze_script(config: dict, reference_paths: List[str], *,
-                       original_script: str = "",
-                       node_to_replace: str = "",
-                       dry_run: bool = False) -> dict:
-    body: Dict[str, Any] = {"reference_paths": reference_paths}
-    if original_script:
-        body["original_script"] = original_script
-    if node_to_replace:
-        body["node_to_replace"] = node_to_replace
-    return _request_with_retry(
-        "POST", f"{config['baseUrl']}/analyze/script",
-        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
-    )
-
-
-def api_analyze_characters(config: dict, text: str, *,
-                           dry_run: bool = False) -> dict:
-    return _request_with_retry(
-        "POST", f"{config['baseUrl']}/analyze/characters",
-        api_key=config["apiKey"], json_body={"story_text": text},
-        dry_run=dry_run,
     )
 
 
@@ -926,7 +839,7 @@ def _build_delivery_instructions(deliver_to: str, channel: str,
                                  base_dir: str, subcommand: str) -> str:
     """Build channel-specific delivery instructions for spawn task."""
     # Determine if this is image or video generation
-    is_image = subcommand in ("generate-image", "generate-marketing-image")
+    is_image = subcommand == "generate-image"
     is_audio = subcommand == "generate-audio"
 
     if is_audio:
@@ -1099,11 +1012,9 @@ def cmd_generate_image(args, config: dict):
     api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "resolution", "model", "callback_url",
-        "n", "seed", "quality", "background", "moderation",
-        "output_format", "negative_prompt", "style", "guidance_scale",
+        "n", "seed", "output_format", "negative_prompt",
+        "style", "guidance_scale",
     ]))
-    if getattr(args, "online_search", None):
-        api_kwargs["online_search"] = True
     if getattr(args, "watermark", None):
         api_kwargs["watermark"] = True
 
@@ -1193,22 +1104,6 @@ def cmd_generate_video(args, config: dict):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def cmd_generate_marketing_image(args, config: dict):
-    """Generate a marketing image with auto-enhanced prompt."""
-    dry_run = getattr(args, "dry_run", False)
-    _check_api_key(config, allow_dry_run=dry_run)
-
-    api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
-    api_kwargs.update(_collect_optional_args(args, ["size", "callback_url"]))
-
-    result = submit_and_poll(
-        config, "generate-marketing-image",
-        api_generate_marketing_image, api_kwargs,
-        no_wait=args.no_wait, dry_run=dry_run,
-    )
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
 def cmd_generate_audio(args, config: dict):
     """Generate audio (music, sound effects) via multi-platform providers."""
     dry_run = getattr(args, "dry_run", False)
@@ -1254,12 +1149,8 @@ def cmd_generate_text(args, config: dict):
     api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
     api_kwargs.update(_collect_optional_args(args, [
         "model", "provider", "system_instruction", "response_format",
-        "reasoning_effort", "thinking_level", "callback_url",
+        "callback_url",
     ]))
-    if getattr(args, "web_search", None):
-        api_kwargs["web_search"] = True
-    if getattr(args, "reference_urls", None):
-        api_kwargs["reference_urls"] = args.reference_urls
 
     # Text is sync by default (no polling); only submit_and_poll if async
     result = api_generate_text(config, **api_kwargs, dry_run=dry_run)
@@ -1277,7 +1168,6 @@ def cmd_generate_seedance_video(args, config: dict):
                                     "model": getattr(args, "model", "doubao-seedance-2-0-260128")}
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "duration", "resolution", "seed",
-        "negative_prompt",
         "execution_expires_after", "safety_identifier", "priority",
         "callback_url",
     ]))
@@ -1374,58 +1264,6 @@ def cmd_run_workflow(args, config: dict):
     result = submit_and_poll(
         config, "run-workflow", api_run_workflow, api_kwargs,
         no_wait=args.no_wait, dry_run=dry_run,
-    )
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-# --- Analysis commands (sync) ---
-
-def cmd_analyze_image(args, config: dict):
-    """Analyze images with AI vision."""
-    _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
-    for url in args.reference_urls:
-        _validate_url(url)
-    result = api_analyze_image(
-        config, args.reference_urls,
-        query=getattr(args, "query", "") or "",
-        dry_run=getattr(args, "dry_run", False),
-    )
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-def cmd_analyze_video(args, config: dict):
-    """Analyze video content with AI."""
-    _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
-    for url in args.reference_urls:
-        _validate_url(url)
-    result = api_analyze_video(
-        config, args.reference_urls,
-        query=getattr(args, "query", "") or "",
-        dry_run=getattr(args, "dry_run", False),
-    )
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-def cmd_analyze_script(args, config: dict):
-    """Extract script from video and design interactive nodes."""
-    _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
-    for url in args.reference_paths:
-        _validate_url(url)
-    kwargs: Dict[str, Any] = {"reference_paths": args.reference_paths}
-    kwargs.update(_collect_optional_args(args, [
-        "original_script", "node_to_replace",
-    ]))
-    result = api_analyze_script(config, **kwargs,
-                                dry_run=getattr(args, "dry_run", False))
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-def cmd_analyze_characters(args, config: dict):
-    """Parse character profiles from story text."""
-    _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
-    result = api_analyze_characters(
-        config, args.text,
-        dry_run=getattr(args, "dry_run", False),
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -1534,7 +1372,7 @@ def cmd_spawn_task(args, config: dict):
     args_dict: Dict[str, Any] = {"prompt": args.prompt}
     args_dict.update(_collect_optional_args(args, [
         "aspect_ratio", "resolution", "duration", "model",
-        "size", "workflow_id", "inputs",
+        "workflow_id", "inputs",
     ]))
     if args.reference_urls:
         args_dict["reference_urls"] = args.reference_urls
@@ -1786,13 +1624,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default=None, help="Model ID override")
     p.add_argument("--n", type=int, default=None, help="Number of images to generate (1-10)")
     p.add_argument("--seed", type=int, default=None, help="Random seed (null=random)")
-    p.add_argument("--quality", default=None, help="Quality: auto/low/medium/high (GT-Image-2)")
-    p.add_argument("--background", default=None, help="Background: auto/opaque/transparent (GT-Image-2)")
-    p.add_argument("--moderation", default=None, help="Moderation: auto/low (GT-Image-2)")
     p.add_argument("--output-format", default=None, help="Output format: png/jpeg/webp")
     p.add_argument("--negative-prompt", default=None, help="Negative prompt")
-    p.add_argument("--online-search", action="store_true", default=False,
-                   help="Enable web search grounding (Gemini)")
     p.add_argument("--style", default=None, help="Style description")
     p.add_argument("--guidance-scale", type=float, default=None,
                    help="Text weight 1-10 (Seedance image models)")
@@ -1834,14 +1667,6 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Delivery channel — used with --spawn")
     _add_wait_and_dry_run(p)
 
-    # --- generate-marketing-image ---
-    p = sub.add_parser("generate-marketing-image",
-                       help="Generate marketing image with auto-enhanced prompt")
-    p.add_argument("--prompt", required=True, help="Marketing image description")
-    p.add_argument("--size", default=None,
-                   help="Image size (e.g. 1080x1920)")
-    _add_wait_and_dry_run(p)
-
     # --- generate-audio ---
     p = sub.add_parser("generate-audio",
                        help="Generate standalone audio/BGM")
@@ -1875,30 +1700,20 @@ def build_parser() -> argparse.ArgumentParser:
     # --- remove-bg ---
     p = sub.add_parser("remove-bg", help="Remove background from an image")
     p.add_argument("--image", default=None, help="Base64-encoded image data")
-    
-    _add_common_args(p)
+    _add_dry_run(p)
 
     # --- generate-text ---
     p = sub.add_parser("generate-text", help="Generate text / chat response from an LLM")
     p.add_argument("--prompt", required=True, help="Text prompt / instruction")
-    p.add_argument("--model", default="Gemi 3.0 Flash",
-                   help="Model name (default: Gemi 3.0 Flash)")
-    p.add_argument("--provider", default="gemini",
-                   choices=["gemini", "openai", "deepseek"],
-                   help="LLM provider (default: gemini)")
+    p.add_argument("--model", default="deepseek-v4-pro",
+                   choices=["deepseek-v4-pro", "deepseek-v4-flash"],
+                   help="Model ID (default: deepseek-v4-pro)")
+    p.add_argument("--provider", default="deepseek",
+                   choices=["deepseek"],
+                   help="LLM provider (default: deepseek)")
     p.add_argument("--system-instruction", default=None, help="System prompt")
     p.add_argument("--response-format", default=None,
                    choices=["text", "json_object"], help="Output format")
-    p.add_argument("--reasoning-effort", default=None,
-                   choices=["minimal", "low", "medium", "high", "xhigh"],
-                   help="OpenAI reasoning depth")
-    p.add_argument("--thinking-level", default=None,
-                   choices=["low", "medium", "high"],
-                   help="Gemini thinking depth")
-    p.add_argument("--web-search", action="store_true", default=False,
-                   help="Enable web search grounding (Gemini)")
-    p.add_argument("--reference-urls", nargs="+", default=None,
-                   help="Multimodal reference (image/video/audio URLs)")
     p.add_argument("--callback-url", default=None,
                    help="If set, makes generation async → returns job_id")
     _add_dry_run(p)
@@ -1908,7 +1723,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Generate video with Seedance 2.0 exclusive features")
     p.add_argument("--prompt", required=True, help="Video description")
     p.add_argument("--model", default="doubao-seedance-2-0-260128",
-                   choices=["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128"],
+                   choices=["doubao-seedance-2-0-260128",
+                            "doubao-seedance-2-0-fast-260128",
+                            "doubao-seedance-2-0-mini-260615"],
                    help="Seedance 2.0 model")
     p.add_argument("--aspect-ratio", default="16:9",
                    choices=["1:1", "3:4", "4:3", "9:16", "16:9", "21:9"],
@@ -1920,7 +1737,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=None, help="Random seed")
     p.add_argument("--no-generate-audio", action="store_true", default=False,
                    help="Disable audio generation")
-    p.add_argument("--negative-prompt", default=None, help="Negative prompt")
     p.add_argument("--return-last-frame", action="store_true", default=False,
                    help="Return the generated video's last frame image")
     p.add_argument("--execution-expires-after", type=int, default=None,
@@ -1962,40 +1778,6 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=["feishu", "telegram", "discord"],
                    help="Delivery channel — used with --spawn")
     _add_wait_and_dry_run(p)
-
-    # --- analyze-image ---
-    p = sub.add_parser("analyze-image", help="Analyze images with AI vision")
-    p.add_argument("--reference-urls", nargs="+", required=True,
-                   help="Image URLs to analyze")
-    p.add_argument("--query", default=None,
-                   help="Specific question about the image")
-    _add_dry_run(p)
-
-    # --- analyze-video ---
-    p = sub.add_parser("analyze-video", help="Analyze video content")
-    p.add_argument("--reference-urls", nargs="+", required=True,
-                   help="Video URLs to analyze")
-    p.add_argument("--query", default=None,
-                   help="Specific question about the video")
-    _add_dry_run(p)
-
-    # --- analyze-script ---
-    p = sub.add_parser("analyze-script",
-                       help="Extract script from video + interactive nodes")
-    p.add_argument("--reference-paths", nargs="+", required=True,
-                   help="Video URLs/paths to analyze")
-    p.add_argument("--original-script", default=None,
-                   help="Existing script for regeneration mode")
-    p.add_argument("--node-to-replace", default=None,
-                   help="Specific node to regenerate")
-    _add_dry_run(p)
-
-    # --- analyze-characters ---
-    p = sub.add_parser("analyze-characters",
-                       help="Parse character profiles from story text")
-    p.add_argument("--text", required=True,
-                   help="Story text to extract characters from")
-    _add_dry_run(p)
 
     # --- job-status ---
     p = sub.add_parser("job-status", help="Check job status")
@@ -2041,8 +1823,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Build sessions_spawn payload for async agent execution")
     p.add_argument("--subcommand", required=True,
                    choices=["generate-image", "generate-video",
-                            "generate-audio", "generate-marketing-image",
-                            "run-workflow"],
+                            "generate-audio", "run-workflow"],
                    help="Which generation command to spawn")
     p.add_argument("--prompt", default=None, help="Generation prompt")
     p.add_argument("--aspect-ratio", default=None, help="Aspect ratio")
@@ -2050,7 +1831,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--duration", type=int, default=None,
                    help="Video duration (seconds)")
     p.add_argument("--model", default=None, help="Model ID override")
-    p.add_argument("--size", default=None, help="Marketing image size")
     p.add_argument("--workflow-id", default=None, help="Workflow ID")
     p.add_argument("--inputs", default=None, help="Workflow inputs (JSON)")
     p.add_argument("--reference-urls", nargs="+", default=None,
@@ -2090,15 +1870,10 @@ COMMAND_MAP = {
     "generate-seedance-video": cmd_generate_seedance_video,
     "generate-audio": cmd_generate_audio,
     "generate-text": cmd_generate_text,
-    "generate-marketing-image": cmd_generate_marketing_image,
     "stt": cmd_stt,
     "tts": cmd_tts,
     "list-workflows": cmd_list_workflows,
     "run-workflow": cmd_run_workflow,
-    "analyze-image": cmd_analyze_image,
-    "analyze-video": cmd_analyze_video,
-    "analyze-script": cmd_analyze_script,
-    "analyze-characters": cmd_analyze_characters,
     "job-status": cmd_job_status,
     "list-jobs": cmd_list_jobs,
     "cancel-job": cmd_cancel_job,

@@ -2,7 +2,7 @@
   "name": "artclaw-creative-suite",
   "version": "1.2.0",
   "displayName": "ARTCLAW AI Creative Suite",
-  "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, workflow execution, multimodal analysis, model selection guidance, and more.",
+  "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, text generation, voice STT/TTS, workflow execution, model selection guidance, and more.",
   "author": {
     "name": "ARTCLAW Team",
     "url": "https://artclaw.com/"
@@ -21,7 +21,6 @@
     "voice-tts",
     "rest-api",
     "artclaw",
-    "marketing",
     "creative",
     "text-to-image",
     "text-to-video",
@@ -86,10 +85,6 @@
           "method": "POST",
           "path": "/volcengine/video/tasks/{task_id}/cancel"
         },
-        "seedance-tasks-list": {
-          "method": "GET",
-          "path": "/volcengine/video/tasks"
-        },
         "audio": {
           "method": "POST",
           "path": "/generate/audio"
@@ -111,9 +106,10 @@
           "method": "GET",
           "path": "/generate/text/chat/{chat_id}/history"
         },
-        "marketing-image": {
+        "remove-bg": {
           "method": "POST",
-          "path": "/generate/marketing-image"
+          "path": "/generate/remove-bg",
+          "description": "Remove image background (async). Returns job_id, poll GET /jobs/{job_id}."
         }
       },
       "voice": {
@@ -173,24 +169,6 @@
         "delete": {
           "method": "POST",
           "path": "/volcengine/assets/delete"
-        }
-      },
-      "analyze": {
-        "image": {
-          "method": "POST",
-          "path": "/analyze/image"
-        },
-        "video": {
-          "method": "POST",
-          "path": "/analyze/video"
-        },
-        "script": {
-          "method": "POST",
-          "path": "/analyze/script"
-        },
-        "characters": {
-          "method": "POST",
-          "path": "/analyze/characters"
         }
       },
       "workflows": {

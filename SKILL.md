@@ -2,10 +2,10 @@
 name: artclaw-creative-suite
 description: |
   ARTCLAW AI Creative Suite - invoke ARTCLAW platform's AI content creation capabilities via CLI.
-  Supports AI image generation, video generation with optional BGM/audio, audio/BGM generation, workflow execution, multimodal analysis, model selection guidance, and job management.
+  Supports AI image generation, video generation with optional BGM/audio, audio/BGM generation, text generation, voice STT/TTS, workflow execution, model selection guidance, and job management.
   All generation commands must run asynchronously using the current platform adapter. Requires an API Key prefixed with vk_ for authenticated features.
-  Trigger keywords: generate image, generate video, BGM, background music, audio generation, AI painting, text-to-image, text-to-video, image-to-video, marketing image,
-  logo, cover, workflow, video analysis, image analysis, model list, switch model, ARTCLAW, ArtClaw.
+  Trigger keywords: generate image, generate video, BGM, background music, audio generation, AI painting, text-to-image, text-to-video, image-to-video,
+  logo, cover, workflow, remove background, text generation, model list, switch model, ARTCLAW, ArtClaw.
 compatibility:
   dependencies:
     - ARTCLAW REST API (https://artclaw.com/api/v1)
@@ -52,13 +52,12 @@ If platform detection is ambiguous, ask the user which platform they are using. 
 5. In non-spawn platforms, use `--no-wait` by default unless the selected adapter explicitly defines a different async strategy or the user explicitly asks the agent to wait.
 6. In OpenClaw-compatible spawn platforms, use `--spawn` instead of `--no-wait`.
 7. Immediately tell the user after a generation/workflow job is submitted or a background task is started.
-8. Analysis commands are synchronous and do not require spawn/background execution.
-9. Guide users to https://artclaw.com/settings for API key creation and credit top-up.
-10. Deliver generated media as native platform messages when the adapter supports it; otherwise return the result URL and job metadata.
-11. Platform-specific async behavior, delivery semantics, and anti-blocking rules must be defined only in the selected adapter document under `docs/adapters/` and followed strictly.
-12. Mention only the relevant default/switchable models before generation.
-13. Answer model questions from `Capability and Model Defaults`; do not use CLI help or API calls for model lists.
-14. For batch video generation, never resubmit an item after a `job_id` was returned. If polling times out or the agent is interrupted, continue with `job-status`, `last-job`, or `history` for the existing `job_id`.
+8. Guide users to https://artclaw.com/settings for API key creation and credit top-up.
+9. Deliver generated media as native platform messages when the adapter supports it; otherwise return the result URL and job metadata.
+10. Platform-specific async behavior, delivery semantics, and anti-blocking rules must be defined only in the selected adapter document under `docs/adapters/` and followed strictly.
+11. Mention only the relevant default/switchable models before generation.
+12. Answer model questions from `Capability and Model Defaults`; do not use CLI help or API calls for model lists.
+13. For batch video generation, never resubmit an item after a `job_id` was returned. If polling times out or the agent is interrupted, continue with `job-status`, `last-job`, or `history` for the existing `job_id`.
 
 ---
 
@@ -113,13 +112,24 @@ After a successful `verify-key` with no concrete generation request yet, show th
 Startup greeting template:
 
 ```text
-ARTCLAW is ready. I can generate:
-- Images: default `doubao-seedream-5-0-260128`; switch to `youchuan-v-7` for realistic style or `youchuan-niji-7` for anime.
-- Videos: default `doubao-seedance-2-0-260128`; switch to `doubao-seedance-2-0-fast-260128` for speed. Dreamina, Seedance 1.5, Kling, Vidu, and HappyHorse models are also available.
-- BGM/audio: use `generate-audio` with Suno `Suvo V4.5 ALL`.
+ARTCLAW is ready. Here is everything I can create, the models available, and what each supports — just tell me your need (and optionally a model; I use the default if you don't pick one):
 
-Tell me whether you want an image, video, or BGM/audio. If you do not specify a model, I will use the default.
+| Type | Command | Models (★ = default) | Key options |
+| --- | --- | --- | --- |
+| 🖼️ Image | `generate-image` | ★`doubao-seedream-5-0-260128` · `youchuan-v-7` (realistic) · `youchuan-niji-7` (anime) · `Navo Bana 2.5 Flash Image` · `Navo Bana 3.0 Pro Image` · `Navo Bana 3.1 Flash Image` (Gemini) · `GT-Image-2` | aspect ratio 16:9 / 9:16 / 1:1 / 4:3 / 21:9 · resolution 1K / 2K / 4K · reference images · negative prompt |
+| 🎬 Video | `generate-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` · `doubao-seedance-1-5-pro-251215` · `kling-v3-omni` · `viduq3-pro` · `happyhorse-1.0` · `Vo 3.1` · `Vo 3.1 Fast` · `Grk Video` | aspect ratio · duration 2–12s · 480p / 720p / 1080p · image-to-video · BGM on by default (`--no-generate-audio` to mute) |
+| 🎬 Seedance (exclusive) | `generate-seedance-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` | return last frame · priority · custom timeout · safety identifier |
+| 🎵 Music / BGM | `generate-audio` | Suno: ★`Suvo V4.5 ALL` · `Suvo V5` | instrumental-only · custom mode · style · title · vocal gender |
+| 📝 Text | `generate-text` | ★`deepseek-v4-pro` · `deepseek-v4-flash` (faster) | system instruction · `json_object` output · sync (default) or async |
+| 🎙️ Speech→Text | `stt` | — | audio (base64 / file) → text · async |
+| 🎙️ Text→Speech | `tts` | speakers: ★`en_male_tim_uranus_bigtts` · `zh_female_shuangkuaishu_moon_bigtts` · … | text → audio · pick voice via `--speaker` · async |
+| ✂️ Remove BG | `remove-bg` | — | remove an image's background |
+| 🧩 Workflow | `list-workflows` / `run-workflow` | preset workflows (run `list-workflows` to see them) | run a preset pipeline with JSON inputs |
+
+Tell me what you want to create!
 ```
+
+Show this full table as the greeting. Localize the wording to the user's language, but keep model IDs and command names verbatim.
 
 For concrete generation requests, mention the relevant default once and run with defaults unless the user chooses a model.
 
@@ -131,27 +141,23 @@ Use this table for default and switchable models.
 
 | Media type | Default | Switchable models | Notes |
 | --- | --- | --- | --- |
-| Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `youchuan-v-7`, `youchuan-niji-7` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. |
-| Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-260128`, `dreamina-seedance-2-0-fast-260128`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
+| Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. `Navo Bana` models are Gemini image models. |
+| Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
+| Audio/BGM | `suno` + `Suvo V4.5 ALL` | `Suvo V4.5 ALL` | Use `generate-audio` for standalone music/BGM. |
+| Text | `deepseek-v4-pro` | `deepseek-v4-pro`, `deepseek-v4-flash` | `deepseek-v4-flash` is the faster/cheaper option. Provider is `deepseek` only. |
+| Voice | STT: auto; TTS: `en_male_tim_uranus_bigtts` | TTS speakers, e.g. `en_male_tim_uranus_bigtts`, `zh_female_shuangkuaishu_moon_bigtts` | `stt` = speech→text, `tts` = text→speech; both async. TTS voice is chosen via `--speaker`. |
 
 ### Remove Background (`remove-bg`)
 
-Remove the background from an image using AI.
+Remove the background from an image using AI. Returns a `job_id` — use `job-status` to check progress. When complete, the result includes the URL of the background-removed image.
 
+```bash
+python3 scripts/artclaw.py remove-bg --image "base64_data"
 ```
-artclaw remove-bg --image "base64_data"
-```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-|  | string | Yes | Base64-encoded image data |
-
-Example:
-
-
-Returns a  — use  to check progress. When complete, the result includes the URL of the background-removed image.
-
-| Audio/BGM | `suno` + `Suvo V4.5 ALL` | `Suvo V4.5 ALL` | Use `generate-audio` for standalone music/BGM. |
+| Parameter | Description | Values |
+| --- | --- | --- |
+| `--image` | Base64-encoded image data, required | Base64 string |
 
 ### Generate Image
 
@@ -178,7 +184,7 @@ python3 scripts/artclaw.py generate-image \
 | `--resolution` | Resolution | `1K`, `2K`, `4K` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference files, auto-converted to base64 | One or more paths |
-| `--model` | Model override | `doubao-seedream-5-0-260128` (default), `youchuan-v-7`, `youchuan-niji-7` |
+| `--model` | Model override | `doubao-seedream-5-0-260128` (default), `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` |
 
 ### Generate Video
 
@@ -208,17 +214,8 @@ python3 scripts/artclaw.py generate-video \
 | `--resolution` | Resolution | `480p`, `720p`, `1080p` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference image files, auto-converted | One or more paths |
-| `--model` | Model override | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-260128`, `dreamina-seedance-2-0-fast-260128`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0` |
+| `--model` | Model override | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` |
 | `--no-generate-audio` | Disable generated audio/BGM | Flag (default off; video audio/BGM is on by default) |
-
-### Generate Marketing Image
-
-```bash
-python3 scripts/artclaw.py generate-marketing-image \
-  --prompt "Summer cool drinks promotional poster" \
-  --size 1080x1920 \
-  --no-wait
-```
 
 ### Generate Audio
 
@@ -251,31 +248,25 @@ python3 scripts/artclaw.py generate-audio \
 
 ```bash
 python3 scripts/artclaw.py generate-text \
-  --prompt "Explain quantum computing in simple terms" \
-  --model Gemi 3.0 Flash
+  --prompt "Explain quantum computing in simple terms"
 ```
 
 Sync mode (default) returns text directly. Add `--callback-url` for async job mode.
 
 ```bash
 python3 scripts/artclaw.py generate-text \
-  --prompt "Describe this image" \
-  --reference-urls https://example.com/photo.jpg \
-  --provider gemini \
-  --web-search
+  --prompt "Return a JSON list of 3 startup ideas" \
+  --model deepseek-v4-flash \
+  --response-format json_object
 ```
 
 | Parameter | Description | Values |
 | --- | --- | --- |
 | `--prompt` | Text prompt, required | Text |
-| `--model` | Model ID | `Gemi 3.0 Flash` (default), `Gemi 3.5 Flash`, `Gemi 3.1 Pro`, `deepseek-chat` |
-| `--provider` | LLM provider | `gemini` (default), `openai`, `deepseek` |
+| `--model` | Model ID | `deepseek-v4-pro` (default), `deepseek-v4-flash` |
+| `--provider` | LLM provider | `deepseek` (default) |
 | `--system-instruction` | System prompt | Text |
 | `--response-format` | Output format | `text` (default), `json_object` |
-| `--reasoning-effort` | OpenAI reasoning depth | `minimal`, `low`, `medium`, `high`, `xhigh` |
-| `--thinking-level` | Gemini thinking depth | `low`, `medium`, `high` |
-| `--web-search` | Enable web grounding | Flag (Gemini only) |
-| `--reference-urls` | Multimodal reference (image/video/audio) | One or more URLs |
 
 ### Voice STT / TTS (Async)
 
@@ -314,42 +305,6 @@ python3 scripts/artclaw.py run-workflow \
 ```
 
 Replace `--no-wait` with `--spawn`, `--deliver-to`, and `--deliver-channel` only when the current platform adapter says to do so.
-
----
-
-## Analysis Commands
-
-Analysis commands are synchronous. They do not require `--spawn` or background execution.
-
-### Image Analysis
-
-```bash
-python3 scripts/artclaw.py analyze-image \
-  --reference-urls https://example.com/photo.jpg \
-  --query "Describe the main content of this image"
-```
-
-### Video Analysis
-
-```bash
-python3 scripts/artclaw.py analyze-video \
-  --reference-urls https://example.com/clip.mp4 \
-  --query "Summarize the video content"
-```
-
-### Script Extraction
-
-```bash
-python3 scripts/artclaw.py analyze-script \
-  --reference-paths https://example.com/drama.mp4
-```
-
-### Character Profiles
-
-```bash
-python3 scripts/artclaw.py analyze-characters \
-  --text "Li Ming is an introverted but brilliant programmer..."
-```
 
 ---
 
