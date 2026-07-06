@@ -10,7 +10,7 @@ Get your key: https://artclaw.com/settings
 """
 
 SKILL_NAME = "artclaw-creative-suite"
-SKILL_VERSION = "1.1.0"
+SKILL_VERSION = "1.2.0"
 API_BASE_URL = "https://artclaw.com/api/v1"
 
 API_CONFIG = {
@@ -22,16 +22,16 @@ ENDPOINTS = {
     # Generation (async, returns job_id)
     "generate_image": ("POST", "/generate/image"),
     "generate_video": ("POST", "/generate/video"),
+    "generate_seedance_video": ("POST", "/volcengine/video"),
     "generate_audio": ("POST", "/generate/audio"),
-    "generate_marketing_image": ("POST", "/generate/marketing-image"),
+    "generate_text": ("POST", "/generate/text"),
+    "remove_bg": ("POST", "/generate/remove-bg"),
+    # Voice (async)
+    "voice_stt": ("POST", "/generate/voice/stt"),
+    "voice_tts": ("POST", "/generate/voice/tts"),
     # Workflows
     "list_workflows": ("GET", "/workflows/"),
     "run_workflow": ("POST", "/workflows/{workflow_id}/run"),
-    # Analysis (synchronous)
-    "analyze_image": ("POST", "/analyze/image"),
-    "analyze_video": ("POST", "/analyze/video"),
-    "analyze_script": ("POST", "/analyze/script"),
-    "analyze_characters": ("POST", "/analyze/characters"),
     # Job management
     "get_job": ("GET", "/jobs/{job_id}"),
     "list_jobs": ("GET", "/jobs/"),
