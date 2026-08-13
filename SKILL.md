@@ -94,6 +94,42 @@ All local ARTCLAW data is stored under `~/.artclaw/`, including `config.json`, `
 
 ---
 
+## Team Billing
+
+For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to `generate-image`, `generate-video`, and `generate-audio`.
+
+**The agent must guide the user to provide their `team_id` before generating with team billing.**
+
+### How the user finds their `team_id`
+
+In the VICOO web app:
+
+1. Click the avatar / user menu in the top bar.
+2. Open **团队设置** (Team Settings) — or **团队管理** (Team Management).
+3. The team header shows a **团队 ID** (Team ID) line with a copy button. Click the copy icon to copy the team UUID, and paste it to the agent.
+
+The copied value is the `team_id` UUID to use. If the user is not on a team, team billing is unavailable — bill the account instead (omit `team_id`).
+
+### How to send it (highest priority first)
+
+1. Per command: `--team-id <team-uuid>`
+2. Environment variable: `ARTCLAW_TEAM_ID=<team-uuid>`
+3. Persisted config: `python3 scripts/artclaw.py config-init --api-key "vk_xxx" --team-id "<team-uuid>"`
+
+Example:
+
+```bash
+python3 scripts/artclaw.py generate-video \
+  --prompt "A kitten" \
+  --team-id 8f8bacf4-e130-4221-8bab-58cf14c755fb \
+  --no-wait
+```
+
+- Omit `team_id` entirely to bill the account itself (default).
+- If the user is not a member of the given team, the API returns `403`.
+
+---
+
 ## Generation Commands
 
 Generation and workflow commands are long-running. Always follow the current platform adapter before choosing `--spawn`, Claude Code `run_in_background`, `--no-wait`, or explicit waiting.
@@ -116,11 +152,11 @@ ARTCLAW is ready. Here is everything I can create, the models available, and wha
 
 | Type | Command | Models (★ = default) | Key options |
 | --- | --- | --- | --- |
-| 🖼️ Image | `generate-image` | ★`doubao-seedream-5-0-260128` · `youchuan-v-7` (realistic) · `youchuan-niji-7` (anime) · `Navo Bana 2.5 Flash Image` · `Navo Bana 3.0 Pro Image` · `Navo Bana 3.1 Flash Image` (Gemini) · `GT-Image-2` | aspect ratio 16:9 / 9:16 / 1:1 / 4:3 / 21:9 · resolution 1K / 2K / 4K · reference images · negative prompt |
-| 🎬 Video | `generate-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` · `doubao-seedance-1-5-pro-251215` · `kling-v3-omni` · `viduq3-pro` · `happyhorse-1.0` · `Vo 3.1` · `Vo 3.1 Fast` · `Grk Video` | aspect ratio · duration 2–12s · 480p / 720p / 1080p · image-to-video · BGM on by default (`--no-generate-audio` to mute) |
+| 🖼️ Image | `generate-image` | ★`doubao-seedream-5-0-260128` · `doubao-seedream-5-0-pro-260628` · `youchuan-v-7` (realistic) · `youchuan-niji-7` (anime) · `Navo Bana 2.5 Flash Image` · `Navo Bana 3.0 Pro Image` · `Navo Bana 3.1 Flash Image` (Gemini) · `GT-Image-2` | aspect ratio 16:9 / 9:16 / 1:1 / 4:3 / 21:9 · resolution 1K / 2K / 4K · reference images · negative prompt |
+| 🎬 Video | `generate-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` · `doubao-seedance-2-5-260628` · `doubao-seedance-1-5-pro-251215` · `kling-v3-omni` · `viduq3-pro` · `happyhorse-1.0` · `happyhorse-1.1` · `Vo 3.1` · `Vo 3.1 Fast` · `Grk Video` | aspect ratio · duration 2–12s · 480p / 720p / 1080p · image-to-video · BGM on by default (`--no-generate-audio` to mute) |
 | 🎬 Seedance (exclusive) | `generate-seedance-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` | return last frame · priority · custom timeout · safety identifier |
 | 🎵 Music / BGM | `generate-audio` | Suno: ★`Suvo V4.5 ALL` · `Suvo V5` | instrumental-only · custom mode · style · title · vocal gender |
-| 📝 Text | `generate-text` | ★`deepseek-v4-pro` · `deepseek-v4-flash` (faster) | system instruction · `json_object` output · sync (default) or async |
+| 📝 Text | `generate-text` | ★`deepseek-v4-pro` · `deepseek-v4-flash` (faster) · `Gemi 3.0 Flash` · `Gemi 3.1 Pro` · `Gemi 3.1 Flash Lite` · `Gemi 3.5 Flash` · `GT-5.5` | system instruction · `json_object` output · sync (default) or async · **image/video/audio analysis via `--reference-parts` (Gemi only)** |
 | 🎙️ Speech→Text | `stt` | — | audio (base64 / file) → text · async |
 | 🎙️ Text→Speech | `tts` | speakers: ★`en_male_tim_uranus_bigtts` · `zh_female_shuangkuaishu_moon_bigtts` · … | text → audio · pick voice via `--speaker` · async |
 | ✂️ Remove BG | `remove-bg` | — | remove an image's background |
@@ -141,10 +177,10 @@ Use this table for default and switchable models.
 
 | Media type | Default | Switchable models | Notes |
 | --- | --- | --- | --- |
-| Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. `Navo Bana` models are Gemini image models. |
-| Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
-| Audio/BGM | `suno` + `Suvo V4.5 ALL` | `Suvo V4.5 ALL` | Use `generate-audio` for standalone music/BGM. |
-| Text | `deepseek-v4-pro` | `deepseek-v4-pro`, `deepseek-v4-flash` | `deepseek-v4-flash` is the faster/cheaper option. Provider is `deepseek` only. |
+| Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. `Navo Bana` models are Gemini image models. |
+| Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-2-5-260628`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `happyhorse-1.1`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
+| Audio/BGM | `suno` + `Suvo V4.5 ALL` | `Suvo V4.5 ALL`, `Suvo V5` | Use `generate-audio` for standalone music/BGM. |
+| Text | `deepseek-v4-pro` | `deepseek-v4-pro`, `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5` | `deepseek-v4-flash` is the faster/cheaper option. **Gemi models support multimodal input** via `--reference-parts` (image/video/audio → text). |
 | Voice | STT: auto; TTS: `en_male_tim_uranus_bigtts` | TTS speakers, e.g. `en_male_tim_uranus_bigtts`, `zh_female_shuangkuaishu_moon_bigtts` | `stt` = speech→text, `tts` = text→speech; both async. TTS voice is chosen via `--speaker`. |
 
 ### Remove Background (`remove-bg`)
@@ -168,12 +204,19 @@ python3 scripts/artclaw.py generate-image \
   --no-wait
 ```
 
-With references:
+With references (HTTPS URL, base64 data URI, or local file):
 
 ```bash
+# HTTPS URL
 python3 scripts/artclaw.py generate-image \
   --prompt "Landscape painting in the same style" \
   --reference-urls https://example.com/style_ref.jpg \
+  --no-wait
+
+# Local file (auto-inlined as a base64 data URI)
+python3 scripts/artclaw.py generate-image \
+  --prompt "Landscape painting in the same style" \
+  --reference-files ./style_ref.png \
   --no-wait
 ```
 
@@ -184,7 +227,10 @@ python3 scripts/artclaw.py generate-image \
 | `--resolution` | Resolution | `1K`, `2K`, `4K` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference files, auto-converted to base64 | One or more paths |
-| `--model` | Model override | `doubao-seedream-5-0-260128` (default), `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` |
+| `--model` | Model override | `doubao-seedream-5-0-260128` (default), `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` |
+| `--team-id` | Team UUID for team billing | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
+
+**Reference images.** `--reference-files` accepts local files and inlines them as `data:<mime>;base64,...`; `--reference-urls` accepts HTTPS URLs or base64 data URIs. Keep each reference image under ~10 MB to avoid timeouts.
 
 ### Generate Video
 
@@ -197,12 +243,19 @@ python3 scripts/artclaw.py generate-video \
   --no-wait
 ```
 
-Image-to-video:
+Image-to-video (HTTPS URL, base64 data URI, or local file):
 
 ```bash
+# HTTPS URL
 python3 scripts/artclaw.py generate-video \
   --prompt "Make the person in the frame turn their head and smile" \
   --reference-urls https://example.com/portrait.jpg \
+  --no-wait
+
+# Local file (auto-inlined as a base64 data URI)
+python3 scripts/artclaw.py generate-video \
+  --prompt "Make the person in the frame turn their head and smile" \
+  --reference-files ./portrait.png \
   --no-wait
 ```
 
@@ -214,8 +267,11 @@ python3 scripts/artclaw.py generate-video \
 | `--resolution` | Resolution | `480p`, `720p`, `1080p` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference image files, auto-converted | One or more paths |
-| `--model` | Model override | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` |
+| `--model` | Model override | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-2-5-260628`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `happyhorse-1.1`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` |
 | `--no-generate-audio` | Disable generated audio/BGM | Flag (default off; video audio/BGM is on by default) |
+| `--team-id` | Team UUID for team billing | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
+
+**Reference images (I2V).** `--reference-files` accepts local files and inlines them as `data:<mime>;base64,...`; `--reference-urls` accepts HTTPS URLs or base64 data URIs. Keep each reference image under ~10 MB to avoid timeouts.
 
 ### Generate Audio
 
@@ -232,7 +288,7 @@ python3 scripts/artclaw.py generate-audio \
 | --- | --- | --- |
 | `--prompt` | Music description or lyrics, required | Text |
 | `--provider` | Audio platform provider | `suno` (default) |
-| `--model` | Model ID | `Suvo V4.5 ALL` (default) |
+| `--model` | Model ID | `Suvo V4.5 ALL` (default), `Suvo V5` |
 | `--instrumental` | Instrumental only, no vocals | Flag (default off) |
 | `--custom-mode` | Custom mode for precise control | Flag (default off) |
 | `--style` | Music style | `pop`, `rock`, `jazz`, etc. |
@@ -243,6 +299,7 @@ python3 scripts/artclaw.py generate-audio \
 | `--weirdness-constraint` | Weirdness (0-1) | Float |
 | `--audio-weight` | Audio weight (0-1) | Float |
 | `--persona-id` | Persona ID for voice cloning | Text |
+| `--team-id` | Team UUID for team billing | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
 
 ### Generate Text
 
@@ -260,13 +317,32 @@ python3 scripts/artclaw.py generate-text \
   --response-format json_object
 ```
 
+Multimodal analysis (image / video / audio → text) requires a **Gemi** model. Use `--reference-parts` with `type=url` (public HTTPS URL or `data:` URI) or `type=@file` (a local file, inlined as a base64 data URI):
+
+```bash
+# Analyze a local video (inlined as base64 data URI)
+python3 scripts/artclaw.py generate-text \
+  --prompt "Describe what happens in this video" \
+  --model "Gemi 3.0 Flash" \
+  --reference-parts "video=@/path/to/clip.mp4"
+
+# Analyze an image by URL
+python3 scripts/artclaw.py generate-text \
+  --prompt "What is in this image?" \
+  --model "Gemi 3.0 Flash" \
+  --reference-parts "image=https://example.com/photo.png"
+```
+
 | Parameter | Description | Values |
 | --- | --- | --- |
 | `--prompt` | Text prompt, required | Text |
-| `--model` | Model ID | `deepseek-v4-pro` (default), `deepseek-v4-flash` |
+| `--model` | Model ID | `deepseek-v4-pro` (default), `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5` |
 | `--provider` | LLM provider | `deepseek` (default) |
 | `--system-instruction` | System prompt | Text |
 | `--response-format` | Output format | `text` (default), `json_object` |
+| `--reference-parts` | Multimodal reference (Gemi models only) | One or more `type=url` / `type=@file`, e.g. `video=@./clip.mp4`, `image=https://...` |
+
+**Base64 / size limit for `--reference-parts`.** Media is sent inline as `data:<mime>;base64,...`. The genai backend inlines media up to **10 MB of decoded bytes**; larger files are auto-uploaded to GCS instead, which requires a Vertex + FileBucket config and fails otherwise. So keep reference media under 10 MB — for video, transcode down first (e.g. 480p) if needed. `--reference-parts` with a non-Gemi model errors out client-side.
 
 ### Voice STT / TTS (Async)
 
@@ -326,6 +402,7 @@ If a generation command returns `poll_timeout`, the job was already submitted. D
 | --- | --- | --- |
 | `401 Unauthorized` | API key invalid, missing, or revoked | Guide user to regenerate the key |
 | `402` / insufficient credits | Account balance depleted | Guide user to top up at https://artclaw.com/settings |
+| `403 not a member of this team` | `team_id` does not belong to the user, or the user is not a member | Ask the user to verify their team UUID; omit `--team-id` to bill the account instead |
 | `404 Voice job not found` | Job ID does not exist or expired | Voice jobs have shorter TTL; re-submit |
 | `404 Job not found` | Job ID does not exist or expired after 24h | Tell user the job expired and ask whether to regenerate |
 | `404 Workflow not found` | Workflow does not exist | Run `list-workflows` first |

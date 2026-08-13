@@ -91,6 +91,38 @@ TERMINAL_STATUSES = frozenset({"success", "failed", "canceled", "expired"})
 ALLOWED_URL_SCHEMES = ("http://", "https://")
 ALLOWED_IMAGE_DATA_URI_PREFIX = "data:image/"
 
+# Multimodal reference (generate-text --reference-parts). The Gemi models map to
+# Gemini under the hood and are the only ones that accept image/video/audio input.
+# Backend enforces the same set (vicoo-mcp-server model_policy.REST_TEXT_MODELS).
+VALID_TEXT_MODELS = frozenset({
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    "Gemi 3.0 Flash",
+    "Gemi 3.1 Pro",
+    "Gemi 3.1 Flash Lite",
+    "Gemi 3.5 Flash",
+    "GT-5.5",
+})
+
+# reference_parts[].url is sent inline as `data:<mime>;base64,...`. The genai
+# service (GeMiniProvider.mediaToPart) inlines media up to 10 MB of *decoded*
+# bytes; anything larger is auto-uploaded to GCS, which requires a Vertex +
+# FileBucket config and fails otherwise. Keep media under 10 MB.
+REFERENCE_PART_TYPES = ("image", "video", "audio")
+MAX_REFERENCE_BYTES = 10 * 1024 * 1024  # 10 MB decoded media
+
+# Display name → real model ID (mirrors vicoo-mcp-server model_policy._NAME_TO_MODEL).
+# Used only to tell whether a text model is Gemini-backed (for reference_parts gating).
+MODEL_ALIASES = {
+    "Gemi 3.0 Flash": "gemini-3-flash-preview",
+    "Gemi 3.1 Pro": "gemini-3.1-pro-preview",
+    "Gemi 3.1 Flash Lite": "gemini-3.1-flash-lite",
+    "Gemi 3.5 Flash": "gemini-3.5-flash",
+    "GT-5.5": "gpt-5.5",
+    "deepseek-v4-pro": "deepseek-v4-pro",
+    "deepseek-v4-flash": "deepseek-v4-flash",
+}
+
 # Spawn
 SPAWN_TIMEOUT_SECONDS = 2400  # 40 minutes
 
@@ -187,6 +219,73 @@ def _file_to_base64(file_path: str) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
+def _file_to_data_uri(file_path: str, mime_type: str = "") -> str:
+    """Convert a local media file to a base64 data URI (image/video/audio).
+
+    `mime_type` is inferred from the file extension unless explicitly given
+    (e.g. video files whose extension is non-standard).
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Reference file not found: {file_path}")
+
+    if not mime_type:
+        ext = path.suffix.lower()
+        mime_type = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".gif": "image/gif",
+            ".webp": "image/webp", ".bmp": "image/bmp",
+            ".mp4": "video/mp4", ".mov": "video/quicktime",
+            ".webm": "video/webm", ".m4v": "video/x-m4v",
+            ".mp3": "audio/mpeg", ".wav": "audio/wav",
+            ".m4a": "audio/mp4", ".ogg": "audio/ogg",
+        }.get(ext, "application/octet-stream")
+
+    with open(path, "rb") as f:
+        raw = f.read()
+    if len(raw) > MAX_REFERENCE_BYTES:
+        raise ValueError(
+            f"Reference media too large: {len(raw)} bytes exceeds "
+            f"the {MAX_REFERENCE_BYTES // (1024 * 1024)} MB inline limit "
+            f"(decode to base64 inline; larger files are auto-uploaded to GCS "
+            f"and require a Vertex + FileBucket backend config)."
+        )
+    encoded = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _build_reference_parts(specs: List[str]) -> List[Dict[str, str]]:
+    """Turn `--reference-parts` args into the API's [{type, url}] list.
+
+    Each spec is one of:
+      - `type=url`        → pass the URL through (https:// or data: URI)
+      - `type=@filepath`  → read a local file and inline it as a data URI
+    `type` must be image / video / audio.
+    """
+    parts: List[Dict[str, str]] = []
+    for spec in specs:
+        if "=" not in spec:
+            raise ValueError(
+                f"Invalid --reference-parts spec (expected type=url or type=@file): {spec}"
+            )
+        ref_type, ref_value = spec.split("=", 1)
+        ref_type = ref_type.strip().lower()
+        ref_value = ref_value.strip()
+        if ref_type not in REFERENCE_PART_TYPES:
+            raise ValueError(
+                f"Unsupported reference type {ref_type!r}; "
+                f"expected one of {', '.join(REFERENCE_PART_TYPES)}"
+            )
+        if not ref_value:
+            raise ValueError(f"Empty reference value for type {ref_type!r}")
+
+        if ref_value.startswith("@"):
+            file_path = ref_value[1:]
+            ref_value = _file_to_data_uri(file_path)
+        parts.append({"type": ref_type, "url": ref_value})
+    return parts
+
+
 def _ensure_dir():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -212,21 +311,26 @@ def _get_config() -> dict:
     """
     Resolve full config.
 
-    Priority: env var ARTCLAW_API_KEY > config.json > defaults.
+    Priority: env var > config.json > defaults.
     """
     api_key = os.environ.get("ARTCLAW_API_KEY", "")
     base_url = os.environ.get("ARTCLAW_BASE_URL", "")
+    team_id = os.environ.get("ARTCLAW_TEAM_ID", "")
 
     file_cfg = {}
-    if not api_key:
+    if not api_key or not team_id:
         file_cfg = _load_raw_config()
+    if not api_key:
         api_key = file_cfg.get("apiKey", "")
     if not base_url:
         base_url = file_cfg.get("baseUrl", "") if file_cfg else ""
+    if not team_id:
+        team_id = file_cfg.get("teamId", "") if file_cfg else ""
 
     return {
         "apiKey": api_key,
         "baseUrl": base_url or DEFAULT_BASE_URL,
+        "teamId": team_id,
     }
 
 
@@ -439,6 +543,7 @@ def api_generate_image(config: dict, prompt: str, *,
                        negative_prompt: str = None,
                        style: str = None, guidance_scale: float = None,
                        watermark: bool = None,
+                       team_id: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt}
@@ -466,6 +571,8 @@ def api_generate_image(config: dict, prompt: str, *,
         body["guidance_scale"] = guidance_scale
     if watermark is not None:
         body["watermark"] = watermark
+    if team_id:
+        body["team_id"] = team_id
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/image",
         api_key=config["apiKey"], json_body=body,
@@ -479,6 +586,7 @@ def api_generate_video(config: dict, prompt: str, *,
                        reference_urls: List[str] = None, model: str = None,
                        callback_url: str = None,
                        generate_audio: bool = None,
+                       team_id: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt}
@@ -496,6 +604,8 @@ def api_generate_video(config: dict, prompt: str, *,
         body["callback_url"] = callback_url
     if generate_audio is not None:
         body["generate_audio"] = generate_audio
+    if team_id:
+        body["team_id"] = team_id
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/video",
         api_key=config["apiKey"], json_body=body,
@@ -513,6 +623,7 @@ def api_generate_audio(config: dict, *,
                        weirdness_constraint: float = None,
                        audio_weight: float = None, persona_id: str = None,
                        callback_url: str = None,
+                       team_id: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"provider": provider, "model": model}
@@ -540,6 +651,8 @@ def api_generate_audio(config: dict, *,
         body["persona_id"] = persona_id
     if callback_url:
         body["callback_url"] = callback_url
+    if team_id:
+        body["team_id"] = team_id
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/audio",
         api_key=config["apiKey"], json_body=body,
@@ -552,6 +665,7 @@ def api_generate_text(config: dict, prompt: str, *,
                       provider: str = "deepseek",
                       system_instruction: str = None,
                       response_format: str = None,
+                      reference_parts: List[Dict[str, str]] = None,
                       callback_url: str = None,
                       dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt, "model": model, "provider": provider}
@@ -559,6 +673,8 @@ def api_generate_text(config: dict, prompt: str, *,
         body["system_instruction"] = system_instruction
     if response_format:
         body["response_format"] = response_format
+    if reference_parts:
+        body["reference_parts"] = reference_parts
     if callback_url:
         body["callback_url"] = callback_url
     return _request_with_retry(
@@ -738,6 +854,14 @@ def _collect_optional_args(args, keys: List[str]) -> dict:
     """
     return {k: getattr(args, k) for k in keys
             if getattr(args, k, None) is not None}
+
+
+def _resolve_team_id(args, config: dict) -> Optional[str]:
+    """Resolve team_id: --team-id flag > env var > config.json.
+
+    Returns None when no team is configured (billed to the account itself).
+    """
+    return getattr(args, "team_id", None) or config.get("teamId", "") or None
 
 
 def _validate_url(url: str):
@@ -1015,6 +1139,7 @@ def cmd_generate_image(args, config: dict):
         "n", "seed", "output_format", "negative_prompt",
         "style", "guidance_scale",
     ]))
+    api_kwargs["team_id"] = _resolve_team_id(args, config)
     if getattr(args, "watermark", None):
         api_kwargs["watermark"] = True
 
@@ -1063,6 +1188,7 @@ def cmd_generate_video(args, config: dict):
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "duration", "resolution", "model", "callback_url",
     ]))
+    api_kwargs["team_id"] = _resolve_team_id(args, config)
 
     # Handle spawn mode differently: don't convert files to base64 yet
     if _should_spawn(args):
@@ -1118,6 +1244,7 @@ def cmd_generate_audio(args, config: dict):
         "style_weight", "weirdness_constraint", "audio_weight", "persona_id",
         "callback_url",
     ]))
+    api_kwargs["team_id"] = _resolve_team_id(args, config)
     if getattr(args, "instrumental", None):
         api_kwargs["instrumental"] = True
     if getattr(args, "custom_mode", None):
@@ -1151,6 +1278,29 @@ def cmd_generate_text(args, config: dict):
         "model", "provider", "system_instruction", "response_format",
         "callback_url",
     ]))
+
+    # Multimodal reference (image/video/audio → text) is Gemi-only. Resolve the
+    # display name to see whether it maps to a Gemini model; gate reference_parts
+    # on that so non-Gemi models get a clear error instead of a backend 400.
+    reference_parts = None
+    if getattr(args, "reference_parts", None):
+        model = api_kwargs.get("model", "deepseek-v4-pro")
+        resolved = MODEL_ALIASES.get(model, model)
+        if not resolved.startswith("gemini-"):
+            print(json.dumps({
+                "error": (
+                    "Multimodal reference (--reference-parts) requires a Gemi "
+                    "model (e.g. 'Gemi 3.0 Flash'). "
+                    f"Got model {model!r}."
+                ),
+            }), file=sys.stderr)
+            sys.exit(1)
+        try:
+            reference_parts = _build_reference_parts(args.reference_parts)
+        except (ValueError, FileNotFoundError) as e:
+            print(json.dumps({"error": str(e)}), file=sys.stderr)
+            sys.exit(1)
+        api_kwargs["reference_parts"] = reference_parts
 
     # Text is sync by default (no polling); only submit_and_poll if async
     result = api_generate_text(config, **api_kwargs, dry_run=dry_run)
@@ -1337,13 +1487,14 @@ def cmd_config(args, config: dict):
     elif key:
         safe["apiKey"] = "***"
     safe["source_env_var"] = "ARTCLAW_API_KEY"
+    safe["team_env_var"] = "ARTCLAW_TEAM_ID"
     safe["config_file"] = str(CONFIG_FILE)
     safe["state_dir"] = str(STATE_DIR)
     print(json.dumps(safe, indent=2, ensure_ascii=False))
 
 
 def cmd_config_init(args, config: dict):
-    """Initialize or update config.json with API key."""
+    """Initialize or update config.json with API key (and optional team ID)."""
     _ensure_dir()
 
     if not args.api_key.startswith("vk_"):
@@ -1352,6 +1503,8 @@ def cmd_config_init(args, config: dict):
     raw = _load_raw_config()
     raw["apiKey"] = args.api_key
     raw.setdefault("baseUrl", DEFAULT_BASE_URL)
+    if getattr(args, "team_id", None):
+        raw["teamId"] = args.team_id
 
     with open(CONFIG_FILE, "w") as f:
         json.dump(raw, f, indent=2, ensure_ascii=False)
@@ -1631,6 +1784,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Text weight 1-10 (Seedance image models)")
     p.add_argument("--watermark", action="store_true", default=False,
                    help="Add explicit watermark (Seedance)")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill to the team's credits instead of the account")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -1658,6 +1813,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default=None, help="Model ID override")
     p.add_argument("--no-generate-audio", action="store_true", default=False,
                    help="Disable generated audio/BGM (video audio is enabled by default)")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill to the team's credits instead of the account")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -1687,6 +1844,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Weirdness constraint 0-1")
     p.add_argument("--audio-weight", type=float, default=None, help="Audio weight 0-1")
     p.add_argument("--persona-id", default=None, help="Persona ID for voice cloning")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill to the team's credits instead of the account")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -1706,14 +1865,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("generate-text", help="Generate text / chat response from an LLM")
     p.add_argument("--prompt", required=True, help="Text prompt / instruction")
     p.add_argument("--model", default="deepseek-v4-pro",
-                   choices=["deepseek-v4-pro", "deepseek-v4-flash"],
-                   help="Model ID (default: deepseek-v4-pro)")
+                   choices=sorted(VALID_TEXT_MODELS),
+                   help="Model ID (default: deepseek-v4-pro). Gemi models support multimodal input.")
     p.add_argument("--provider", default="deepseek",
                    choices=["deepseek"],
                    help="LLM provider (default: deepseek)")
     p.add_argument("--system-instruction", default=None, help="System prompt")
     p.add_argument("--response-format", default=None,
                    choices=["text", "json_object"], help="Output format")
+    p.add_argument("--reference-parts", nargs="+", default=None, metavar="TYPE=URL|@FILE",
+                   help=("Multimodal reference (Gemi models only). "
+                         "One or more 'type=url' or 'type=@file' specs, "
+                         "e.g. 'video=@./clip.mp4' or 'image=https://example.com/a.png'. "
+                         "Files are inlined as base64 data URIs (max 10 MB)."))
     p.add_argument("--callback-url", default=None,
                    help="If set, makes generation async → returns job_id")
     _add_dry_run(p)
@@ -1817,6 +1981,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("config-init", help="Initialize or update config")
     p.add_argument("--api-key", required=True,
                    help="ArtClaw API key (starts with vk_)")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — stored so generation bills the team's credits")
 
     # --- spawn-task ---
     p = sub.add_parser("spawn-task",
