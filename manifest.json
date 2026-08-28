@@ -75,7 +75,7 @@
         "seedance-video": {
           "method": "POST",
           "path": "/volcengine/video",
-          "description": "Seedance 2.0 exclusive video generation with return_last_frame, priority, safety_identifier"
+          "description": "Seedance 2.0/2.5 video generation with return_last_frame, priority, safety_identifier"
         },
         "seedance-tasks-get": {
           "method": "GET",
