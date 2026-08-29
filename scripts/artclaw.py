@@ -17,6 +17,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -90,6 +91,21 @@ VALID_RESOLUTIONS_VIDEO = frozenset({"480p", "720p", "1080p"})
 TERMINAL_STATUSES = frozenset({"success", "failed", "canceled", "expired"})
 ALLOWED_URL_SCHEMES = ("http://", "https://")
 ALLOWED_IMAGE_DATA_URI_PREFIX = "data:image/"
+
+
+def _is_seedance25_model(model: Optional[str]) -> bool:
+    normalized = (model or "").lower().replace(".", "-").replace("_", "-")
+    return bool(re.search(r"(?:^|-)seedance-2-5(?:-|$)", normalized))
+
+
+def _validate_video_output_format_model(model: Optional[str], output_format: Optional[str]):
+    if output_format is None or _is_seedance25_model(model):
+        return
+    print(json.dumps({
+        "error": "--output-format is only supported by Seedance 2.5",
+        "model": model,
+    }), file=sys.stderr)
+    sys.exit(1)
 
 # Multimodal reference (generate-text --reference-parts). The Gemi models map to
 # Gemini under the hood and are the only ones that accept image/video/audio input.
@@ -586,6 +602,7 @@ def api_generate_video(config: dict, prompt: str, *,
                        reference_urls: List[str] = None, model: str = None,
                        callback_url: str = None,
                        generate_audio: bool = None,
+                       output_format: str = None,
                        team_id: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
@@ -604,6 +621,8 @@ def api_generate_video(config: dict, prompt: str, *,
         body["callback_url"] = callback_url
     if generate_audio is not None:
         body["generate_audio"] = generate_audio
+    if output_format:
+        body["output_format"] = output_format
     if team_id:
         body["team_id"] = team_id
     return _request_with_retry(
@@ -622,6 +641,7 @@ def api_generate_audio(config: dict, *,
                        style_weight: float = None,
                        weirdness_constraint: float = None,
                        audio_weight: float = None, persona_id: str = None,
+                       duration: int = None,
                        callback_url: str = None,
                        team_id: str = None,
                        idempotency_key: str = None,
@@ -649,6 +669,8 @@ def api_generate_audio(config: dict, *,
         body["audio_weight"] = audio_weight
     if persona_id:
         body["persona_id"] = persona_id
+    if duration is not None:
+        body["duration"] = duration
     if callback_url:
         body["callback_url"] = callback_url
     if team_id:
@@ -699,6 +721,7 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
                                 aspect_ratio: str = None, duration: int = None,
                                 resolution: str = None, seed: int = None,
                                 generate_audio: bool = None,
+                                output_format: str = None,
                                 return_last_frame: bool = None,
                                 execution_expires_after: int = None,
                                 safety_identifier: str = None,
@@ -721,6 +744,8 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
         body["seed"] = seed
     if generate_audio is not None:
         body["generate_audio"] = generate_audio
+    if output_format:
+        body["output_format"] = output_format
     if return_last_frame is not None:
         body["return_last_frame"] = return_last_frame
     if execution_expires_after is not None:
@@ -1187,7 +1212,11 @@ def cmd_generate_video(args, config: dict):
     api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "duration", "resolution", "model", "callback_url",
+        "output_format",
     ]))
+    _validate_video_output_format_model(
+        api_kwargs.get("model"), api_kwargs.get("output_format"),
+    )
     api_kwargs["team_id"] = _resolve_team_id(args, config)
 
     # Handle spawn mode differently: don't convert files to base64 yet
@@ -1242,7 +1271,7 @@ def cmd_generate_audio(args, config: dict):
     api_kwargs.update(_collect_optional_args(args, [
         "prompt", "style", "title", "vocal_gender", "negative_tags",
         "style_weight", "weirdness_constraint", "audio_weight", "persona_id",
-        "callback_url",
+        "duration", "callback_url",
     ]))
     api_kwargs["team_id"] = _resolve_team_id(args, config)
     if getattr(args, "instrumental", None):
@@ -1307,10 +1336,10 @@ def cmd_generate_text(args, config: dict):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-# --- Seedance 2.0 video ---
+# --- Seedance video ---
 
 def cmd_generate_seedance_video(args, config: dict):
-    """Generate video with Seedance 2.0 exclusive features."""
+    """Generate video with Seedance 2.0/2.5 features."""
     dry_run = getattr(args, "dry_run", False)
     _check_api_key(config, allow_dry_run=dry_run)
 
@@ -1319,8 +1348,11 @@ def cmd_generate_seedance_video(args, config: dict):
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "duration", "resolution", "seed",
         "execution_expires_after", "safety_identifier", "priority",
-        "callback_url",
+        "callback_url", "output_format",
     ]))
+    _validate_video_output_format_model(
+        api_kwargs.get("model"), api_kwargs.get("output_format"),
+    )
     # 默认生成音频，--no-generate-audio 禁用
     api_kwargs["generate_audio"] = not args.no_generate_audio
     if getattr(args, "return_last_frame", None):
@@ -1802,7 +1834,7 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=sorted(VALID_ASPECT_RATIOS),
                    help="Aspect ratio (default: 16:9)")
     p.add_argument("--duration", type=int, default=None,
-                   help="Video duration in seconds (2-12)")
+                   help="Video duration in seconds (model-dependent; Seedance 2.0: 4-15, Seedance 2.5: 4-30)")
     p.add_argument("--resolution", default=None,
                    choices=sorted(VALID_RESOLUTIONS_VIDEO),
                    help="Resolution: 480p, 720p, 1080p")
@@ -1811,6 +1843,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reference-files", nargs="+", default=None,
                    help="Reference images for I2V (local file paths, auto-converted to base64)")
     p.add_argument("--model", default=None, help="Model ID override")
+    p.add_argument("--output-format", default=None, choices=["mp4", "mov"],
+                   help="Output container for Seedance 2.5: mp4 or mov (default: mp4)")
     p.add_argument("--no-generate-audio", action="store_true", default=False,
                    help="Disable generated audio/BGM (video audio is enabled by default)")
     p.add_argument("--team-id", default=None,
@@ -1844,6 +1878,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Weirdness constraint 0-1")
     p.add_argument("--audio-weight", type=float, default=None, help="Audio weight 0-1")
     p.add_argument("--persona-id", default=None, help="Persona ID for voice cloning")
+    p.add_argument("--duration", type=int, default=None,
+                   help="Audio duration in seconds (10-360, Suvo V5.5 custom mode only)")
     p.add_argument("--team-id", default=None,
                    help="Team UUID — bill to the team's credits instead of the account")
     p.add_argument("--spawn", action="store_true", default=False,
@@ -1884,20 +1920,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- generate-seedance-video ---
     p = sub.add_parser("generate-seedance-video",
-                       help="Generate video with Seedance 2.0 exclusive features")
+                       help="Generate video with Seedance 2.0/2.5 features")
     p.add_argument("--prompt", required=True, help="Video description")
     p.add_argument("--model", default="doubao-seedance-2-0-260128",
                    choices=["doubao-seedance-2-0-260128",
                             "doubao-seedance-2-0-fast-260128",
-                            "doubao-seedance-2-0-mini-260615"],
-                   help="Seedance 2.0 model")
+                            "doubao-seedance-2-0-mini-260615",
+                            "doubao-seedance-2-5-260628"],
+                   help="Seedance 2.0/2.5 model")
     p.add_argument("--aspect-ratio", default="16:9",
                    choices=["1:1", "3:4", "4:3", "9:16", "16:9", "21:9"],
                    help="Aspect ratio")
-    p.add_argument("--duration", type=int, default=5, help="Duration in seconds (4-15)")
+    p.add_argument("--duration", type=int, default=5,
+                   help="Duration in seconds (Seedance 2.0: 4-15; Seedance 2.5: 4-30)")
     p.add_argument("--resolution", default="720p",
                    choices=["480p", "720p", "1080p"],
                    help="Resolution")
+    p.add_argument("--output-format", default=None, choices=["mp4", "mov"],
+                   help="Output container for Seedance 2.5: mp4 or mov (default: mp4)")
     p.add_argument("--seed", type=int, default=None, help="Random seed")
     p.add_argument("--no-generate-audio", action="store_true", default=False,
                    help="Disable audio generation")

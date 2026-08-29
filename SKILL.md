@@ -153,8 +153,8 @@ ARTCLAW is ready. Here is everything I can create, the models available, and wha
 | Type | Command | Models (★ = default) | Key options |
 | --- | --- | --- | --- |
 | 🖼️ Image | `generate-image` | ★`doubao-seedream-5-0-260128` · `doubao-seedream-5-0-pro-260628` · `youchuan-v-7` (realistic) · `youchuan-niji-7` (anime) · `Navo Bana 2.5 Flash Image` · `Navo Bana 3.0 Pro Image` · `Navo Bana 3.1 Flash Image` (Gemini) · `GT-Image-2` | aspect ratio 16:9 / 9:16 / 1:1 / 4:3 / 21:9 · resolution 1K / 2K / 4K · reference images · negative prompt |
-| 🎬 Video | `generate-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` · `doubao-seedance-2-5-260628` · `doubao-seedance-1-5-pro-251215` · `kling-v3-omni` · `viduq3-pro` · `happyhorse-1.0` · `happyhorse-1.1` · `Vo 3.1` · `Vo 3.1 Fast` · `Grk Video` | aspect ratio · duration 2–12s · 480p / 720p / 1080p · image-to-video · BGM on by default (`--no-generate-audio` to mute) |
-| 🎬 Seedance (exclusive) | `generate-seedance-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` | return last frame · priority · custom timeout · safety identifier |
+| 🎬 Video | `generate-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` · `doubao-seedance-2-5-260628` · `doubao-seedance-1-5-pro-251215` · `kling-v3-omni` · `viduq3-pro` · `happyhorse-1.0` · `happyhorse-1.1` · `Vo 3.1` · `Vo 3.1 Fast` · `Grk Video` | aspect ratio · model-dependent duration (Seedance 2.5 up to 30s) · 480p / 720p / 1080p · image-to-video · Seedance 2.5 MP4 / MOV output · BGM on by default (`--no-generate-audio` to mute) |
+| 🎬 Seedance | `generate-seedance-video` | ★`doubao-seedance-2-0-260128` · `doubao-seedance-2-0-fast-260128` · `doubao-seedance-2-0-mini-260615` · `doubao-seedance-2-5-260628` | duration 4–15s (2.0) / 4–30s (2.5) · resolution 480p / 720p / 1080p (720p default) · Seedance 2.5 MP4 / MOV output · return last frame · priority · custom timeout · safety identifier |
 | 🎵 Music / BGM | `generate-audio` | Suno: ★`Suvo V4.5 ALL` · `Suvo V5` | instrumental-only · custom mode · style · title · vocal gender |
 | 📝 Text | `generate-text` | ★`deepseek-v4-pro` · `deepseek-v4-flash` (faster) · `Gemi 3.0 Flash` · `Gemi 3.1 Pro` · `Gemi 3.1 Flash Lite` · `Gemi 3.5 Flash` · `GT-5.5` | system instruction · `json_object` output · sync (default) or async · **image/video/audio analysis via `--reference-parts` (Gemi only)** |
 | 🎙️ Speech→Text | `stt` | — | audio (base64 / file) → text · async |
@@ -243,6 +243,17 @@ python3 scripts/artclaw.py generate-video \
   --no-wait
 ```
 
+Seedance 2.5 MOV output:
+
+```bash
+python3 scripts/artclaw.py generate-video \
+  --prompt "Waves crashing on rocks, slow motion" \
+  --model doubao-seedance-2-5-260628 \
+  --resolution 1080p \
+  --output-format mov \
+  --no-wait
+```
+
 Image-to-video (HTTPS URL, base64 data URI, or local file):
 
 ```bash
@@ -263,15 +274,18 @@ python3 scripts/artclaw.py generate-video \
 | --- | --- | --- |
 | `--prompt` | Video description, required | Text |
 | `--aspect-ratio` | Aspect ratio | `16:9`, `9:16`, `1:1`, `4:3`, `21:9` |
-| `--duration` | Duration in seconds | `2` - `12` |
+| `--duration` | Duration in seconds | Model-dependent; Seedance 2.0: `4` - `15`, Seedance 2.5: `4` - `30` |
 | `--resolution` | Resolution | `480p`, `720p`, `1080p` |
 | `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
 | `--reference-files` | Local reference image files, auto-converted | One or more paths |
 | `--model` | Model override | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-2-5-260628`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `happyhorse-1.1`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` |
+| `--output-format` | Output container; Seedance 2.5 only | `mp4` (default), `mov` |
 | `--no-generate-audio` | Disable generated audio/BGM | Flag (default off; video audio/BGM is on by default) |
 | `--team-id` | Team UUID for team billing | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
 
 **Reference images (I2V).** `--reference-files` accepts local files and inlines them as `data:<mime>;base64,...`; `--reference-urls` accepts HTTPS URLs or base64 data URIs. Keep each reference image under ~10 MB to avoid timeouts.
+
+`generate-seedance-video` accepts the same `--output-format mp4|mov` option. Explicit output format selection requires `--model doubao-seedance-2-5-260628`; MP4 remains the default when the option is omitted.
 
 ### Generate Audio
 
