@@ -36,12 +36,12 @@ If platform detection is ambiguous, ask the user which platform they are using. 
 
 ## Platform Adapter Map
 
-| Platform | Adapter document |
-| --- | --- |
-| OpenClaw | `docs/adapters/openclaw.md` |
-| Claude Code | `docs/adapters/claude-code.md` |
-| Hermes Agent | `docs/adapters/hermes.md` |
-| Unknown / unsupported platform | `docs/adapters/others.md` |
+| Platform                       | Adapter document               |
+| ------------------------------ | ------------------------------ |
+| OpenClaw                       | `docs/adapters/openclaw.md`    |
+| Claude Code                    | `docs/adapters/claude-code.md` |
+| Hermes Agent                   | `docs/adapters/hermes.md`      |
+| Unknown / unsupported platform | `docs/adapters/others.md`      |
 
 ## Universal Rules
 
@@ -161,6 +161,7 @@ ARTCLAW is ready. Here is everything I can create, the models available, and wha
 | 🎙️ Text→Speech | `tts` | speakers: ★`en_male_tim_uranus_bigtts` · `zh_female_shuangkuaishu_moon_bigtts` · … | text → audio · pick voice via `--speaker` · async |
 | ✂️ Remove BG | `remove-bg` | — | remove an image's background |
 | 🧩 Workflow | `list-workflows` / `run-workflow` | preset workflows (run `list-workflows` to see them) | run a preset pipeline with JSON inputs |
+| 🧩 Workflow (DSL) | `run-workflow-dsl` | workflow DSL YAML source | run a workflow defined by DSL, compiled server-side |
 
 Tell me what you want to create!
 ```
@@ -175,13 +176,13 @@ Use `generate-video` for a video with BGM. Use `generate-audio` for standalone B
 
 Use this table for default and switchable models.
 
-| Media type | Default | Switchable models | Notes |
-| --- | --- | --- | --- |
-| Image | `doubao-seedream-5-0-260128` | `doubao-seedream-5-0-260128`, `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. `Navo Bana` models are Gemini image models. |
-| Video | `doubao-seedance-2-0-260128` | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-2-5-260628`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `happyhorse-1.1`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output. |
-| Audio/BGM | `suno` + `Suvo V4.5 ALL` | `Suvo V4.5 ALL`, `Suvo V5` | Use `generate-audio` for standalone music/BGM. |
-| Text | `deepseek-v4-pro` | `deepseek-v4-pro`, `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5` | `deepseek-v4-flash` is the faster/cheaper option. **Gemi models support multimodal input** via `--reference-parts` (image/video/audio → text). |
-| Voice | STT: auto; TTS: `en_male_tim_uranus_bigtts` | TTS speakers, e.g. `en_male_tim_uranus_bigtts`, `zh_female_shuangkuaishu_moon_bigtts` | `stt` = speech→text, `tts` = text→speech; both async. TTS voice is chosen via `--speaker`. |
+| Media type | Default                                     | Switchable models                                                                                                                                                                                                                                                           | Notes                                                                                                                                          |
+| ---------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Image      | `doubao-seedream-5-0-260128`                | `doubao-seedream-5-0-260128`, `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2`                                                                        | `youchuan-v-7` is the realistic style option; `youchuan-niji-7` is the anime style option. `Navo Bana` models are Gemini image models.         |
+| Video      | `doubao-seedance-2-0-260128`                | `doubao-seedance-2-0-260128`, `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-2-5-260628`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `happyhorse-1.1`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` | Audio/BGM is enabled by default when supported. Use `--no-generate-audio` only for silent/no-BGM output.                                       |
+| Audio/BGM  | `suno` + `Suvo V4.5 ALL`                    | `Suvo V4.5 ALL`, `Suvo V5`                                                                                                                                                                                                                                                  | Use `generate-audio` for standalone music/BGM.                                                                                                 |
+| Text       | `deepseek-v4-pro`                           | `deepseek-v4-pro`, `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5`                                                                                                                                                 | `deepseek-v4-flash` is the faster/cheaper option. **Gemi models support multimodal input** via `--reference-parts` (image/video/audio → text). |
+| Voice      | STT: auto; TTS: `en_male_tim_uranus_bigtts` | TTS speakers, e.g. `en_male_tim_uranus_bigtts`, `zh_female_shuangkuaishu_moon_bigtts`                                                                                                                                                                                       | `stt` = speech→text, `tts` = text→speech; both async. TTS voice is chosen via `--speaker`.                                                     |
 
 ### Remove Background (`remove-bg`)
 
@@ -191,8 +192,8 @@ Remove the background from an image using AI. Returns a `job_id` — use `job-st
 python3 scripts/artclaw.py remove-bg --image "base64_data"
 ```
 
-| Parameter | Description | Values |
-| --- | --- | --- |
+| Parameter | Description                         | Values        |
+| --------- | ----------------------------------- | ------------- |
 | `--image` | Base64-encoded image data, required | Base64 string |
 
 ### Generate Image
@@ -220,15 +221,15 @@ python3 scripts/artclaw.py generate-image \
   --no-wait
 ```
 
-| Parameter | Description | Values |
-| --- | --- | --- |
-| `--prompt` | Image description, required | Text |
-| `--aspect-ratio` | Aspect ratio | `16:9`, `9:16`, `1:1`, `4:3`, `21:9` |
-| `--resolution` | Resolution | `1K`, `2K`, `4K` |
-| `--reference-urls` | Reference image URLs or base64 data URIs | One or more values |
-| `--reference-files` | Local reference files, auto-converted to base64 | One or more paths |
-| `--model` | Model override | `doubao-seedream-5-0-260128` (default), `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` |
-| `--team-id` | Team UUID for team billing | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
+| Parameter           | Description                                     | Values                                                                                                                                                                                                         |
+| ------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--prompt`          | Image description, required                     | Text                                                                                                                                                                                                           |
+| `--aspect-ratio`    | Aspect ratio                                    | `16:9`, `9:16`, `1:1`, `4:3`, `21:9`                                                                                                                                                                           |
+| `--resolution`      | Resolution                                      | `1K`, `2K`, `4K`                                                                                                                                                                                               |
+| `--reference-urls`  | Reference image URLs or base64 data URIs        | One or more values                                                                                                                                                                                             |
+| `--reference-files` | Local reference files, auto-converted to base64 | One or more paths                                                                                                                                                                                              |
+| `--model`           | Model override                                  | `doubao-seedream-5-0-260128` (default), `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `GT-Image-2` |
+| `--team-id`         | Team UUID for team billing                      | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb`                                                                                                                                                         |
 
 **Reference images.** `--reference-files` accepts local files and inlines them as `data:<mime>;base64,...`; `--reference-urls` accepts HTTPS URLs or base64 data URIs. Keep each reference image under ~10 MB to avoid timeouts.
 
@@ -298,22 +299,22 @@ python3 scripts/artclaw.py generate-audio \
   --no-wait
 ```
 
-| Parameter | Description | Values |
-| --- | --- | --- |
-| `--prompt` | Music description or lyrics, required | Text |
-| `--provider` | Audio platform provider | `suno` (default) |
-| `--model` | Model ID | `Suvo V4.5 ALL` (default), `Suvo V5` |
-| `--instrumental` | Instrumental only, no vocals | Flag (default off) |
-| `--custom-mode` | Custom mode for precise control | Flag (default off) |
-| `--style` | Music style | `pop`, `rock`, `jazz`, etc. |
-| `--title` | Music title | Text |
-| `--vocal-gender` | Vocal gender | `m`, `f` |
-| `--negative-tags` | Style tags to exclude | Text |
-| `--style-weight` | Style weight (0-1) | Float |
-| `--weirdness-constraint` | Weirdness (0-1) | Float |
-| `--audio-weight` | Audio weight (0-1) | Float |
-| `--persona-id` | Persona ID for voice cloning | Text |
-| `--team-id` | Team UUID for team billing | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
+| Parameter                | Description                           | Values                                                 |
+| ------------------------ | ------------------------------------- | ------------------------------------------------------ |
+| `--prompt`               | Music description or lyrics, required | Text                                                   |
+| `--provider`             | Audio platform provider               | `suno` (default)                                       |
+| `--model`                | Model ID                              | `Suvo V4.5 ALL` (default), `Suvo V5`                   |
+| `--instrumental`         | Instrumental only, no vocals          | Flag (default off)                                     |
+| `--custom-mode`          | Custom mode for precise control       | Flag (default off)                                     |
+| `--style`                | Music style                           | `pop`, `rock`, `jazz`, etc.                            |
+| `--title`                | Music title                           | Text                                                   |
+| `--vocal-gender`         | Vocal gender                          | `m`, `f`                                               |
+| `--negative-tags`        | Style tags to exclude                 | Text                                                   |
+| `--style-weight`         | Style weight (0-1)                    | Float                                                  |
+| `--weirdness-constraint` | Weirdness (0-1)                       | Float                                                  |
+| `--audio-weight`         | Audio weight (0-1)                    | Float                                                  |
+| `--persona-id`           | Persona ID for voice cloning          | Text                                                   |
+| `--team-id`              | Team UUID for team billing            | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb` |
 
 ### Generate Text
 
@@ -347,14 +348,14 @@ python3 scripts/artclaw.py generate-text \
   --reference-parts "image=https://example.com/photo.png"
 ```
 
-| Parameter | Description | Values |
-| --- | --- | --- |
-| `--prompt` | Text prompt, required | Text |
-| `--model` | Model ID | `deepseek-v4-pro` (default), `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5` |
-| `--provider` | LLM provider | `deepseek` (default) |
-| `--system-instruction` | System prompt | Text |
-| `--response-format` | Output format | `text` (default), `json_object` |
-| `--reference-parts` | Multimodal reference (Gemi models only) | One or more `type=url` / `type=@file`, e.g. `video=@./clip.mp4`, `image=https://...` |
+| Parameter              | Description                             | Values                                                                                                                                |
+| ---------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `--prompt`             | Text prompt, required                   | Text                                                                                                                                  |
+| `--model`              | Model ID                                | `deepseek-v4-pro` (default), `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5` |
+| `--provider`           | LLM provider                            | `deepseek` (default)                                                                                                                  |
+| `--system-instruction` | System prompt                           | Text                                                                                                                                  |
+| `--response-format`    | Output format                           | `text` (default), `json_object`                                                                                                       |
+| `--reference-parts`    | Multimodal reference (Gemi models only) | One or more `type=url` / `type=@file`, e.g. `video=@./clip.mp4`, `image=https://...`                                                  |
 
 **Base64 / size limit for `--reference-parts`.** Media is sent inline as `data:<mime>;base64,...`. The genai backend inlines media up to **10 MB of decoded bytes**; larger files are auto-uploaded to GCS instead, which requires a Vertex + FileBucket config and fails otherwise. So keep reference media under 10 MB — for video, transcode down first (e.g. 480p) if needed. `--reference-parts` with a non-Gemi model errors out client-side.
 
@@ -372,12 +373,12 @@ python3 scripts/artclaw.py tts --text "Hello, welcome to VICOO."
 python3 scripts/artclaw.py tts --text "你好" --speaker zh_female_shuangkuaishu_moon_bigtts
 ```
 
-| Parameter | Description | Values |
-| --- | --- | --- |
-| `--audio` | Base64 audio data (STT) | `data:audio/wav;base64,...` or raw base64 |
-| `--audio-file` | Local audio file, auto-converted (STT) | Path |
-| `--text` | Text to synthesize (TTS), required | Text |
-| `--speaker` | Speaker ID (TTS) | `en_male_tim_uranus_bigtts` (default), `zh_female_shuangkuaishu_moon_bigtts` |
+| Parameter      | Description                            | Values                                                                       |
+| -------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| `--audio`      | Base64 audio data (STT)                | `data:audio/wav;base64,...` or raw base64                                    |
+| `--audio-file` | Local audio file, auto-converted (STT) | Path                                                                         |
+| `--text`       | Text to synthesize (TTS), required     | Text                                                                         |
+| `--speaker`    | Speaker ID (TTS)                       | `en_male_tim_uranus_bigtts` (default), `zh_female_shuangkuaishu_moon_bigtts` |
 
 Voice jobs use polling profile: interval 3s, timeout 120s.
 
@@ -396,6 +397,27 @@ python3 scripts/artclaw.py run-workflow \
 
 Replace `--no-wait` with `--spawn`, `--deliver-to`, and `--deliver-channel` only when the current platform adapter says to do so.
 
+### Execute Workflow from DSL
+
+For a workflow the caller defines as DSL YAML (not a preset), use `run-workflow-dsl`. The DSL is compiled server-side, so no local compiler is needed:
+
+```bash
+python3 scripts/artclaw.py run-workflow-dsl \
+  --dsl-file ./my-workflow.yaml \
+  --inputs '{"prompt": "a cat"}' \
+  --no-wait
+```
+
+Or pass the DSL inline with `--dsl`. The DSL schema follows `apiVersion: artclaw/v1` with `inputs` / `outputs` / `pipeline` (generation nodes `gen.image`, `gen.text`, `gen.video`, `gen.music`, `gen.voiceClone`, plus `logic.forEach` and data/logic nodes). A compile error returns HTTP 400 with an error code (`E_UNKNOWN_NODE`, `E_TYPE_MISMATCH`, …) — fix the DSL and retry.
+
+**Before authoring DSL, read the reference docs under [`references/workflow-dsl/`](references/workflow-dsl/):**
+
+- [`dsl-syntax.md`](references/workflow-dsl/dsl-syntax.md) — top-level schema, reference syntax (`$inputs` / `$steps` / `$item`), type-compatibility matrix, compiler sugar, `logic.forEach` / `logic.if` control flow, static-structure rule
+- [`node-catalog.md`](references/workflow-dsl/node-catalog.md) — every node with its config fields and ports (all `gen.*` generation nodes, `data.*`, `logic.*`, `primitive.*`) + a selection guide
+- [`error-codes.md`](references/workflow-dsl/error-codes.md) — every compile error code with its fix, and common traps
+- [`sensible-defaults.md`](references/workflow-dsl/sensible-defaults.md) — default models and config; fill these without asking the user
+- [`examples.md`](references/workflow-dsl/examples.md) — complete, compile-verified workflows
+
 ---
 
 ## Job Management & Errors
@@ -412,15 +434,15 @@ Use `job-status`, `last-job`, and `history` for follow-up instead of resubmittin
 
 If a generation command returns `poll_timeout`, the job was already submitted. Do not rerun the same generation command automatically. Use the returned `job_id` with `job-status` and tell the user the existing job is still being tracked.
 
-| Error | Cause | Resolution |
-| --- | --- | --- |
-| `401 Unauthorized` | API key invalid, missing, or revoked | Guide user to regenerate the key |
-| `402` / insufficient credits | Account balance depleted | Guide user to top up at https://artclaw.com/settings |
+| Error                           | Cause                                                              | Resolution                                                                           |
+| ------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `401 Unauthorized`              | API key invalid, missing, or revoked                               | Guide user to regenerate the key                                                     |
+| `402` / insufficient credits    | Account balance depleted                                           | Guide user to top up at https://artclaw.com/settings                                 |
 | `403 not a member of this team` | `team_id` does not belong to the user, or the user is not a member | Ask the user to verify their team UUID; omit `--team-id` to bill the account instead |
-| `404 Voice job not found` | Job ID does not exist or expired | Voice jobs have shorter TTL; re-submit |
-| `404 Job not found` | Job ID does not exist or expired after 24h | Tell user the job expired and ask whether to regenerate |
-| `404 Workflow not found` | Workflow does not exist | Run `list-workflows` first |
-| `429 Too Many Requests` | Rate limit exceeded | Wait and retry |
+| `404 Voice job not found`       | Job ID does not exist or expired                                   | Voice jobs have shorter TTL; re-submit                                               |
+| `404 Job not found`             | Job ID does not exist or expired after 24h                         | Tell user the job expired and ask whether to regenerate                              |
+| `404 Workflow not found`        | Workflow does not exist                                            | Run `list-workflows` first                                                           |
+| `429 Too Many Requests`         | Rate limit exceeded                                                | Wait and retry                                                                       |
 
 ---
 
@@ -430,20 +452,20 @@ Use delivery options only when the platform adapter supports spawn/delivery mode
 
 `--spawn` must be paired with both `--deliver-to` and `--deliver-channel`.
 
-| Scenario | `--deliver-channel` | `--deliver-to` value | Source |
-| --- | --- | --- | --- |
-| Feishu group chat | `feishu` | `oc_xxx` chat ID | `conversation_label` or `chat_id`, strip `chat:` prefix |
-| Feishu direct message | `feishu` | `ou_xxx` open ID | `sender_id`, strip `user:` prefix |
-| Telegram | `telegram` | `chat_id` | Inbound message context |
-| Discord | `discord` | `channel_id` | Inbound message context |
+| Scenario              | `--deliver-channel` | `--deliver-to` value | Source                                                  |
+| --------------------- | ------------------- | -------------------- | ------------------------------------------------------- |
+| Feishu group chat     | `feishu`            | `oc_xxx` chat ID     | `conversation_label` or `chat_id`, strip `chat:` prefix |
+| Feishu direct message | `feishu`            | `ou_xxx` open ID     | `sender_id`, strip `user:` prefix                       |
+| Telegram              | `telegram`          | `chat_id`            | Inbound message context                                 |
+| Discord               | `discord`           | `channel_id`         | Inbound message context                                 |
 
 For Feishu, check `is_group_chat` in inbound metadata: `true` → use `oc_` chat ID; `false` → use `ou_` open ID.
 
-| Channel | Credential source |
-| --- | --- |
-| `feishu` | `~/.openclaw/openclaw.json` → `channels.feishu.accounts.main` |
-| `telegram` | `TELEGRAM_BOT_TOKEN` environment variable |
-| `discord` | Framework built-in message tool |
+| Channel    | Credential source                                             |
+| ---------- | ------------------------------------------------------------- |
+| `feishu`   | `~/.openclaw/openclaw.json` → `channels.feishu.accounts.main` |
+| `telegram` | `TELEGRAM_BOT_TOKEN` environment variable                     |
+| `discord`  | Framework built-in message tool                               |
 
 ---
 
