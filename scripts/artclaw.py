@@ -815,6 +815,21 @@ def api_run_workflow(config: dict, workflow_id: str, inputs: dict, *,
     )
 
 
+def api_run_workflow_from_dsl(config: dict, dsl: str, inputs: dict, *,
+                             timeout: int = None, callback_url: str = None,
+                             dry_run: bool = False) -> dict:
+    """执行由 workflow DSL 源码定义的工作流（服务端编译后执行）。"""
+    body: Dict[str, Any] = {"dsl": dsl, "inputs": inputs}
+    if timeout is not None:
+        body["timeout"] = timeout
+    if callback_url:
+        body["callback_url"] = callback_url
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/workflows/run",
+        api_key=config["apiKey"], json_body=body, dry_run=dry_run,
+    )
+
+
 # --- Job management ---
 
 def api_job_status(config: dict, job_id: str, *,
@@ -1450,6 +1465,61 @@ def cmd_run_workflow(args, config: dict):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def cmd_run_workflow_dsl(args, config: dict):
+    """Execute a workflow defined by DSL source (compiled server-side)."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+
+    try:
+        inputs = json.loads(args.inputs)
+    except json.JSONDecodeError as e:
+        print(json.dumps({
+            "error": f"--inputs must be valid JSON: {e}",
+            "hint": 'Example: --inputs \'{"prompt": "a cat"}\'',
+        }), file=sys.stderr)
+        sys.exit(1)
+
+    if args.dsl and args.dsl_file:
+        print(json.dumps({
+            "error": "--dsl and --dsl-file are mutually exclusive",
+            "hint": "Provide inline YAML via --dsl, or a path via --dsl-file, not both",
+        }), file=sys.stderr)
+        sys.exit(1)
+
+    dsl = args.dsl
+    if args.dsl_file:
+        with open(args.dsl_file, "r", encoding="utf-8") as f:
+            dsl = f.read()
+
+    if not dsl:
+        print(json.dumps({
+            "error": "--dsl or --dsl-file is required",
+            "hint": 'Provide inline YAML via --dsl, or a path via --dsl-file',
+        }), file=sys.stderr)
+        sys.exit(1)
+
+    api_kwargs: Dict[str, Any] = {
+        "dsl": dsl,
+        "inputs": inputs,
+    }
+    api_kwargs.update(_collect_optional_args(args, ["timeout", "callback_url"]))
+
+    if _should_spawn(args):
+        result = build_spawn_task(
+            "run-workflow-dsl", api_kwargs,
+            deliver_to=getattr(args, "deliver_to", None),
+            deliver_channel=getattr(args, "deliver_channel", None),
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    result = submit_and_poll(
+        config, "run-workflow-dsl", api_run_workflow_from_dsl, api_kwargs,
+        no_wait=args.no_wait, dry_run=dry_run,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 # --- Job management commands ---
 
 def cmd_job_status(args, config: dict):
@@ -1983,6 +2053,26 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Delivery channel — used with --spawn")
     _add_wait_and_dry_run(p)
 
+    # --- run-workflow-dsl ---
+    p = sub.add_parser("run-workflow-dsl",
+                       help="Execute a workflow defined by DSL source (server-side compile)")
+    p.add_argument("--dsl", default=None,
+                   help="Workflow DSL YAML source (inline)")
+    p.add_argument("--dsl-file", default=None,
+                   help="Path to a workflow DSL YAML file")
+    p.add_argument("--inputs", required=True,
+                   help='Workflow inputs as JSON string (e.g. \'{"prompt": "a cat"}\')')
+    p.add_argument("--timeout", type=int, default=None,
+                   help="Workflow timeout in seconds")
+    p.add_argument("--spawn", action="store_true", default=False,
+                   help="Output sessions_spawn_args payload instead of running directly")
+    p.add_argument("--deliver-to", default=None,
+                   help="Delivery target (ou_xxx, chat_id, channel_id) — used with --spawn")
+    p.add_argument("--deliver-channel", default=None,
+                   choices=["feishu", "telegram", "discord"],
+                   help="Delivery channel — used with --spawn")
+    _add_wait_and_dry_run(p)
+
     # --- job-status ---
     p = sub.add_parser("job-status", help="Check job status")
     p.add_argument("--job-id", required=True, help="Job ID to check")
@@ -2029,7 +2119,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Build sessions_spawn payload for async agent execution")
     p.add_argument("--subcommand", required=True,
                    choices=["generate-image", "generate-video",
-                            "generate-audio", "run-workflow"],
+                            "generate-audio", "run-workflow",
+                            "run-workflow-dsl"],
                    help="Which generation command to spawn")
     p.add_argument("--prompt", default=None, help="Generation prompt")
     p.add_argument("--aspect-ratio", default=None, help="Aspect ratio")
@@ -2080,6 +2171,7 @@ COMMAND_MAP = {
     "tts": cmd_tts,
     "list-workflows": cmd_list_workflows,
     "run-workflow": cmd_run_workflow,
+    "run-workflow-dsl": cmd_run_workflow_dsl,
     "job-status": cmd_job_status,
     "list-jobs": cmd_list_jobs,
     "cancel-job": cmd_cancel_job,
