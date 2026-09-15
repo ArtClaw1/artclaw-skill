@@ -6,13 +6,13 @@ An all-in-one AI content creation skill powered by the [ARTCLAW](https://artclaw
 
 ## ✨ Features
 
-| Capability | Description |
-|------|------|
-| 🖼️ AI Image Generation | Text-to-image, image-to-image, marketing visuals, product image sets |
-| 🎬 AI Video Generation | Text-to-video, image-to-video |
-| 🔍 Multimodal Analysis | Image understanding, video analysis, script analysis, character profile extraction |
-| ⚡ Workflows | Run preset pipelines in one click (animation / comics / e-commerce detail page, etc.) |
-| ✏️ Prompt Tools | Prompt optimization for logos, covers, marketing images, and carousels (free, no API key required) |
+| Capability             | Description                                                                                        |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| 🖼️ AI Image Generation | Text-to-image, image-to-image, marketing visuals, product image sets                               |
+| 🎬 AI Video Generation | Text-to-video, image-to-video                                                                      |
+| 🔍 Multimodal Analysis | Image understanding, video analysis, script analysis, character profile extraction                 |
+| ⚡ Workflows           | Run preset pipelines in one click (animation / comics / e-commerce detail page, etc.)              |
+| ✏️ Prompt Tools        | Prompt optimization for logos, covers, marketing images, and carousels (free, no API key required) |
 
 ---
 
@@ -54,10 +54,28 @@ Help me create a cyberpunk-style cat illustration
 Use this product image to generate an e-commerce carousel set
 ```
 
+To choose one of the new image models:
+
+```text
+Use GT-Image-2.5-Flash to generate a cat illustration at 2K with high quality
+```
+
+Choose `GT-Image-2.5-Flash` for speed or `GT-Image-2.5` for editing precision. Both support reference images, 1K / 2K / 4K resolution, and `low` / `high` / `max` quality (default `high`). The API and Skill use these exact model names.
+
+## Update an existing installation
+
+Run from the installed Skill directory:
+
+```bash
+python3 scripts/artclaw.py self-update
+```
+
+Then reload the Skill in your agent or start a new session that reads its updated instructions.
+
 ---
 
 ## 📋 Version
 
-- **Version:** 1.1.0
+- **Version:** 1.3.0
 - **Author:** ARTCLAW Team
 - **License:** MIT

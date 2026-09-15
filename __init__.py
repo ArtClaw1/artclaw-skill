@@ -10,7 +10,7 @@ Get your key: https://artclaw.com/settings
 """
 
 SKILL_NAME = "artclaw-creative-suite"
-SKILL_VERSION = "1.2.0"
+SKILL_VERSION = "1.3.0"
 API_BASE_URL = "https://artclaw.com/api/v1"
 
 API_CONFIG = {
