@@ -709,9 +709,12 @@ def api_generate_text(config: dict, prompt: str, *,
 
 
 def api_remove_bg(config: dict, image_base64: str, *,
+                  team_id: str = None,
                   dry_run: bool = False) -> dict:
     """Remove background from an image. Returns job_id immediately."""
     body: Dict[str, Any] = {"image_base64": image_base64}
+    if team_id:
+        body["team_id"] = team_id
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/remove-bg",
         api_key=config["apiKey"], json_body=body,
@@ -1570,7 +1573,9 @@ def cmd_remove_bg(args, config: dict):
     if not args.image:
         print(json.dumps({"error": "Must provide --image (base64)"}), file=sys.stderr)
         sys.exit(1)
-    result = api_remove_bg(config, args.image, dry_run=getattr(args, "dry_run", False))
+    result = api_remove_bg(config, args.image,
+                           team_id=_resolve_team_id(args, config),
+                           dry_run=getattr(args, "dry_run", False))
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 def cmd_verify_key(args, config: dict):
@@ -1979,6 +1984,8 @@ def build_parser() -> argparse.ArgumentParser:
     # --- remove-bg ---
     p = sub.add_parser("remove-bg", help="Remove background from an image")
     p.add_argument("--image", default=None, help="Base64-encoded image data")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill to the team's credits instead of the account")
     _add_dry_run(p)
 
     # --- generate-text ---

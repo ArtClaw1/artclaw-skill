@@ -96,7 +96,7 @@ All local ARTCLAW data is stored under `~/.artclaw/`, including `config.json`, `
 
 ## Team Billing
 
-For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to `generate-image`, `generate-video`, and `generate-audio`.
+For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to `generate-image`, `generate-video`, `generate-audio`, and `remove-bg`.
 
 **The agent must guide the user to provide their `team_id` before generating with team billing.**
 
@@ -192,9 +192,20 @@ Remove the background from an image using AI. Returns a `job_id` — use `job-st
 python3 scripts/artclaw.py remove-bg --image "base64_data"
 ```
 
-| Parameter | Description                         | Values        |
-| --------- | ----------------------------------- | ------------- |
-| `--image` | Base64-encoded image data, required | Base64 string |
+| Parameter   | Description                         | Values        |
+| ----------- | ----------------------------------- | ------------- |
+| `--image`   | Base64-encoded image data, required | Base64 string |
+| `--team-id` | Team UUID for team billing          | Team UUID     |
+
+With team billing:
+
+```bash
+python3 scripts/artclaw.py remove-bg \
+  --image "base64_data" \
+  --team-id 8f8bacf4-e130-4221-8bab-58cf14c755fb
+```
+
+The CLI selects the request's `team_id` in this order: `--team-id`, `ARTCLAW_TEAM_ID`, then persisted `teamId` from `config-init`. If none is configured, it omits `team_id`. Server-side team validation and any team bound to the authentication context still apply.
 
 ### Generate Image
 
