@@ -10,7 +10,7 @@ Get your key: https://artclaw.com/settings
 """
 
 SKILL_NAME = "artclaw-creative-suite"
-SKILL_VERSION = "1.3.0"
+SKILL_VERSION = "1.5.0"
 API_BASE_URL = "https://artclaw.com/api/v1"
 
 API_CONFIG = {
@@ -26,6 +26,17 @@ ENDPOINTS = {
     "generate_audio": ("POST", "/generate/audio"),
     "generate_text": ("POST", "/generate/text"),
     "remove_bg": ("POST", "/generate/remove-bg"),
+    "remove_bg_image": ("POST", "/generate/remove-bg/image"),
+    "remove_bg_video": ("POST", "/generate/remove-bg/video"),
+    "voice_clone": ("POST", "/generate/voice/clone"),
+    "voice_convert": ("POST", "/generate/voice/convert"),
+    "stem_separate": ("POST", "/generate/voice/separate"),
+    "video_retalk": ("POST", "/generate/video-retalk"),
+    "image_enhance": ("POST", "/generate/image-enhance"),
+    "smart_erase": ("POST", "/generate/smart-erase"),
+    "smart_subtitles": ("POST", "/generate/smart-subtitles"),
+    "ai_dubbing": ("POST", "/generate/ai-dubbing"),
+    "video_enhance": ("POST", "/generate/video-enhance"),
     # Voice (async)
     "voice_stt": ("POST", "/generate/voice/stt"),
     "voice_tts": ("POST", "/generate/voice/tts"),
