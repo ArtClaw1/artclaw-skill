@@ -60,7 +60,7 @@ To choose one of the new image models:
 Use GT-Image-2.5-Flash to generate a cat illustration at 2K with high quality
 ```
 
-Choose `GT-Image-2.5-Flash` for speed or `GT-Image-2.5` for editing precision. Both support reference images, 1K / 2K / 4K resolution, and `low` / `high` / `max` quality (default `high`). The API and Skill use these exact model names.
+Choose `GT-Image-2.5-Flash` for speed or `GT-Image-2.5` for editing precision. Both support reference images, 1K / 2K / 4K resolution, `low` / `medium` / `high` / `xhigh` / `max` quality (default `high`), and transparent backgrounds via `--background transparent`. The API and Skill use these exact model names.
 
 ## Update an existing installation
 

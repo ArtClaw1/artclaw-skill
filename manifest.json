@@ -1,6 +1,6 @@
 {
   "name": "artclaw-creative-suite",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "displayName": "ARTCLAW AI Creative Suite",
   "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, text generation, voice STT/TTS, workflow execution, model selection guidance, and more.",
   "author": {
