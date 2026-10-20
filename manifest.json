@@ -1,6 +1,6 @@
 {
   "name": "artclaw-creative-suite",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "displayName": "ARTCLAW AI Creative Suite",
   "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, text generation, voice STT/TTS, workflow execution, model selection guidance, and more.",
   "author": {
@@ -47,7 +47,7 @@
     },
     "artclaw": {
       "path": "scripts/artclaw.py",
-      "description": "ArtClaw REST API CLI client — supports all API endpoints (generation/analysis/workflow/prompt), designed for async Agent invocation. 23 subcommands, JSON output, supports --dry-run and spawn-task.",
+      "description": "ArtClaw REST API CLI client for generation, voice, postprocessing, workflows and jobs. JSON output, dry-run and async spawn support.",
       "runtime": "python3",
       "dependencies": ["requests"],
       "credentials": "ARTCLAW_API_KEY environment variable"
@@ -104,7 +104,30 @@
           "method": "POST",
           "path": "/generate/remove-bg",
           "description": "Remove image background (async). Returns job_id, poll GET /jobs/{job_id}."
-        }
+        },
+        "remove-bg-image": {
+          "method": "POST",
+          "path": "/generate/remove-bg/image",
+          "mode": "async"
+        },
+        "remove-bg-video": {
+          "method": "POST",
+          "path": "/generate/remove-bg/video",
+          "mode": "async"
+        },
+        "voice-clone": { "method": "POST", "path": "/generate/voice/clone", "mode": "async" },
+        "voice-convert": { "method": "POST", "path": "/generate/voice/convert", "mode": "sync" },
+        "stem-separate": { "method": "POST", "path": "/generate/voice/separate", "mode": "sync" },
+        "video-retalk": { "method": "POST", "path": "/generate/video-retalk", "mode": "async" },
+        "image-enhance": { "method": "POST", "path": "/generate/image-enhance", "mode": "async" },
+        "smart-erase": { "method": "POST", "path": "/generate/smart-erase", "mode": "async" },
+        "smart-subtitles": {
+          "method": "POST",
+          "path": "/generate/smart-subtitles",
+          "mode": "async"
+        },
+        "ai-dubbing": { "method": "POST", "path": "/generate/ai-dubbing", "mode": "async" },
+        "video-enhance": { "method": "POST", "path": "/generate/video-enhance", "mode": "async" }
       },
       "voice": {
         "stt": {

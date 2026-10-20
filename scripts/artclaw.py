@@ -15,6 +15,7 @@ All results output to stdout as JSON. Progress/diagnostics go to stderr.
 
 import argparse
 import base64
+import binascii
 import json
 import os
 import re
@@ -22,10 +23,9 @@ import shlex
 import sys
 import tempfile
 import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import requests
@@ -46,6 +46,7 @@ STATE_DIR = Path(os.path.expanduser("~/.artclaw"))
 CONFIG_FILE = STATE_DIR / "config.json"
 LAST_JOB_FILE = STATE_DIR / "last_job.json"
 HISTORY_DIR = STATE_DIR / "history"
+OUTPUT_DIR = STATE_DIR / "outputs"
 
 # API
 DEFAULT_BASE_URL = "https://artclaw.com/api/v1"
@@ -84,7 +85,31 @@ JOB_TYPE_MAP = {
     "stt": "voice",
     "tts": "voice",
     "run-workflow": "workflow",
+    "remove-bg-image": "image",
+    "remove-bg-video": "video",
+    "voice-clone": "audio",
+    "video-retalk": "video",
+    "image-enhance": "image",
+    "smart-erase": "video",
+    "smart-subtitles": "video",
+    "ai-dubbing": "video",
+    "video-enhance": "video",
 }
+
+DIRECT_OPERATIONS = {
+    "remove-bg-image": "remove-bg/image",
+    "remove-bg-video": "remove-bg/video",
+    "voice-clone": "voice/clone",
+    "voice-convert": "voice/convert",
+    "stem-separate": "voice/separate",
+    "video-retalk": "video-retalk",
+    "image-enhance": "image-enhance",
+    "smart-erase": "smart-erase",
+    "smart-subtitles": "smart-subtitles",
+    "ai-dubbing": "ai-dubbing",
+    "video-enhance": "video-enhance",
+}
+SYNC_DIRECT_OPERATIONS = frozenset({"voice-convert", "stem-separate"})
 
 # Validation sets (module-level, not created per call)
 VALID_ASPECT_RATIOS = frozenset({"16:9", "9:16", "1:1", "4:3", "21:9"})
@@ -234,6 +259,8 @@ class ArtClawApiError(Exception):
         self.detail = detail
 
     def is_retryable(self) -> bool:
+        if getattr(self, "execution_outcome_unknown", False):
+            return False
         if self.status_code >= 500:
             return True
         if self.status_code == 429:
@@ -486,7 +513,8 @@ def _request_with_retry(
     """
     Unified HTTP request with exponential backoff retry.
 
-    - Retries on 5xx, 429, and network errors
+    - Retries GET/HEAD on 5xx, 429, and network errors
+    - Never automatically replays execution POSTs (creation is not idempotent)
     - Does NOT retry other 4xx (client errors)
     - Returns parsed JSON response on 200
     """
@@ -506,6 +534,10 @@ def _request_with_retry(
         headers["Content-Type"] = "application/json"
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
+
+    # A supplied key does not establish a server-side idempotency guarantee.
+    if method.upper() not in {"GET", "HEAD"}:
+        max_retries = 0
 
     last_err: Optional[ArtClawApiError] = None
 
@@ -539,6 +571,8 @@ def _request_with_retry(
             _log(f"Retry {attempt + 1}/{max_retries} in {wait}s...")
             time.sleep(wait)
 
+    if last_err and method.upper() not in {"GET", "HEAD"}:
+        last_err.execution_outcome_unknown = True
     raise last_err or ArtClawApiError("Unknown error after retries")
 
 
@@ -739,6 +773,11 @@ def api_generate_audio(config: dict, *,
                        weirdness_constraint: float = None,
                        audio_weight: float = None, persona_id: str = None,
                        duration: int = None,
+                       operation: str = None,
+                       reference_audio_urls: List[str] = None,
+                       video_url: str = None, video_id: str = None,
+                       sound_effect_prompt: str = None, bgm_prompt: str = None,
+                       asmr_mode: bool = None,
                        callback_url: str = None,
                        team_id: str = None,
                        idempotency_key: str = None,
@@ -768,6 +807,13 @@ def api_generate_audio(config: dict, *,
         body["persona_id"] = persona_id
     if duration is not None:
         body["duration"] = duration
+    for key, value in (("operation", operation),
+                       ("reference_audio_urls", reference_audio_urls),
+                       ("video_url", video_url), ("video_id", video_id),
+                       ("sound_effect_prompt", sound_effect_prompt),
+                       ("bgm_prompt", bgm_prompt), ("asmr_mode", asmr_mode)):
+        if value is not None:
+            body[key] = value
     if callback_url:
         body["callback_url"] = callback_url
     if team_id:
@@ -812,6 +858,18 @@ def api_remove_bg(config: dict, image_base64: str, *,
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/generate/remove-bg",
         api_key=config["apiKey"], json_body=body,
+        dry_run=dry_run,
+    )
+
+
+def api_direct_operation(config: dict, operation: str, payload: dict, *,
+                         dry_run: bool = False) -> dict:
+    """Submit one typed direct REST operation without repeating a billable POST."""
+    return _request_with_retry(
+        "POST", f"{config['baseUrl']}/generate/{DIRECT_OPERATIONS[operation]}",
+        api_key=config["apiKey"], json_body=payload,
+        max_retries=0,
+        read_timeout=300 if operation in SYNC_DIRECT_OPERATIONS else READ_TIMEOUT,
         dry_run=dry_run,
     )
 
@@ -1114,65 +1172,71 @@ def _build_delivery_instructions(deliver_to: str, channel: str,
                                  base_dir: str, subcommand: str) -> str:
     """Build channel-specific delivery instructions for spawn task."""
     # Determine if this is image or video generation
-    is_image = subcommand == "generate-image"
-    is_audio = subcommand == "generate-audio"
+    is_image = subcommand in {"generate-image", "remove-bg-image", "image-enhance"}
+    is_audio = subcommand in {"generate-audio", "voice-clone"}
+
+    if subcommand == "smart-subtitles":
+        return f"  1. Share the subtitle file URL with \"{deliver_to}\" as a link."
 
     if is_audio:
         return (
-            f"  1. Share the generated audio/BGM URL with \"{deliver_to}\" as a link. "
+            f"  1. Share every generated audio/BGM URL with \"{deliver_to}\" "
+            "as a separate link, in result order. "
             "Native audio upload is not configured in this skill."
         )
 
     if channel == "feishu":
         if is_image:
             return (
-                "  1. Send via Feishu directly with URL:\n"
+                "  1. For each generated image URL, send via Feishu:\n"
                 f"     python3 {base_dir}/scripts/feishu_send_video.py "
-                f"--image \"<result_url>\" --to \"{deliver_to}\"\n"
+                f"--image \"<image_url>\" --to \"{deliver_to}\"\n"
             )
         else:  # video
             return (
-                "  1. Send via Feishu:\n"
+                "  1. For each generated video URL, send via Feishu:\n"
                 f"     python3 {base_dir}/scripts/feishu_send_video.py "
-                f"--video-url \"<result_url>\" --to \"{deliver_to}\" "
+                f"--video-url \"<video_url>\" --to \"{deliver_to}\" "
                 "--cover-url \"<thumbnail_url>\" --duration <duration_ms>\n"
                 "     Note: duration is in milliseconds for Feishu"
             )
     if channel == "telegram":
         if is_image:
             return (
-                "  1. Download the result locally (curl -o /tmp/artclaw_result.jpg \"<result_url>\")\n"
-                "  2. Send via Telegram:\n"
+                "  1. For each generated image URL, download it to a unique local file "
+                "(curl -o /tmp/artclaw_result_N.jpg \"<image_url>\")\n"
+                "  2. Send each file via Telegram:\n"
                 f"     TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN "
                 f"python3 {base_dir}/scripts/telegram_send_video.py "
-                f"--image /tmp/artclaw_result.jpg --to \"{deliver_to}\" "
+                f"--image /tmp/artclaw_result_N.jpg --to \"{deliver_to}\" "
                 "--caption \"Result ready!\"\n"
             )
         else:  # video
             return (
-                "  1. Download the result locally (curl -o /tmp/artclaw_result.mp4 \"<result_url>\")\n"
-                "  2. Send via Telegram:\n"
+                "  1. For each generated video URL, download it to a unique local file "
+                "(curl -o /tmp/artclaw_result_N.mp4 \"<video_url>\")\n"
+                "  2. Send each file via Telegram:\n"
                 f"     TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN "
                 f"python3 {base_dir}/scripts/telegram_send_video.py "
-                f"--video /tmp/artclaw_result.mp4 --to \"{deliver_to}\" "
+                f"--video /tmp/artclaw_result_N.mp4 --to \"{deliver_to}\" "
                 "--cover-url \"<thumbnail_url>\" --duration <duration_seconds> "
                 "--caption \"Result ready!\"\n"
                 "     Note: duration is in seconds for Telegram"
             )
     if channel == "discord":
-        media_file = "/tmp/artclaw_result.jpg" if is_image else "/tmp/artclaw_result.mp4"
+        media_file = "/tmp/artclaw_result_N.jpg" if is_image else "/tmp/artclaw_result_N.mp4"
         return (
-            f"  1. Download the result locally:\n"
-            f"     curl -sL -o {media_file} \"<result_url>\"\n"
-            "  2. Use the message tool:\n"
+            f"  1. For each generated media URL, download it to a unique local file:\n"
+            f"     curl -sL -o {media_file} \"<media_url>\"\n"
+            "  2. Send each file with the message tool:\n"
             f"     message(action=\"send\", channel=\"discord\", "
             f"target=\"{deliver_to}\", message=\"Result ready!\", "
             f"filePath=\"{media_file}\")\n"
             "     (25 MB limit; for larger files share URL as link)"
         )
     return (
-        f"  1. Deliver the result to \"{deliver_to}\" using the message tool,\n"
-        "     or share the result URL as a link."
+        f"  1. Deliver every generated media result to \"{deliver_to}\" using the message tool,\n"
+        "     or share every result URL as a separate link."
     )
 
 
@@ -1236,13 +1300,18 @@ def build_spawn_task(
         "Wait for the command to complete — do NOT background it.\n\n"
         "When the command finishes:\n"
         "- If the JSON output contains \"status\": \"success\":\n"
-        "  Extract the result URL from the JSON output.\n"
+        "  Inspect the full result object, including nested arrays. Deliver every generated "
+        "image, audio track, or video in result order; do not select only the first URL.\n"
         f"{delivery_instructions}\n"
+        "  Share companion asset URLs too, including original/translated subtitles "
+        "and speaker metadata when present.\n"
         "  Always include a short summary: what was generated, settings used.\n"
         "- If error indicates insufficient credits (402), inform the user and "
         f"guide them to top up at {TOPUP_URL}\n"
         "- If polling times out after a job_id was returned, do not resubmit. "
         "Tell the user the job is still submitted and use job-status for that job_id.\n"
+        "- If submission reports outcome_unknown, do not run the command again; "
+        "check billing and results first.\n"
         "- For other failures, report the error."
     )
 
@@ -1406,13 +1475,16 @@ def cmd_generate_audio(args, config: dict):
     api_kwargs.update(_collect_optional_args(args, [
         "prompt", "style", "title", "vocal_gender", "negative_tags",
         "style_weight", "weirdness_constraint", "audio_weight", "persona_id",
-        "duration", "callback_url",
+        "duration", "callback_url", "operation", "reference_audio_urls",
+        "video_url", "video_id", "sound_effect_prompt", "bgm_prompt",
     ]))
     api_kwargs["team_id"] = _resolve_team_id(args, config)
     if getattr(args, "instrumental", None):
         api_kwargs["instrumental"] = True
     if getattr(args, "custom_mode", None):
         api_kwargs["custom_mode"] = True
+    if getattr(args, "asmr_mode", None):
+        api_kwargs["asmr_mode"] = True
 
     if _should_spawn(args):
         result = build_spawn_task(
@@ -1692,6 +1764,106 @@ def cmd_remove_bg(args, config: dict):
                            team_id=_resolve_team_id(args, config),
                            dry_run=getattr(args, "dry_run", False))
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_direct_operation(args, config: dict):
+    """Submit structured direct generation inputs from JSON or a UTF-8 JSON file."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+    raw = args.input
+    if raw.startswith("@"):
+        raw = Path(raw[1:]).read_text(encoding="utf-8-sig")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid --input JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("--input must be a JSON object")
+    operation = args.command
+    if getattr(args, "callback_url", None):
+        payload["callback_url"] = args.callback_url
+    if _should_spawn(args):
+        input_arg = args.input
+        if input_arg.startswith("@"):
+            input_arg = "@" + str(Path(input_arg[1:]).resolve())
+        task = build_spawn_task(
+            operation, {"input": input_arg, "team_id": _resolve_team_id(args, config)},
+            deliver_to=getattr(args, "deliver_to", None),
+            deliver_channel=getattr(args, "deliver_channel", None),
+        )
+        print(json.dumps(task, indent=2, ensure_ascii=False))
+        return
+    if operation in SYNC_DIRECT_OPERATIONS:
+        audio = payload.get("audio_base64")
+        if isinstance(audio, str) and audio.startswith("@"):
+            path = Path(audio[1:])
+            if path.stat().st_size > 10_000_000:
+                raise ValueError("local audio exceeds 10 MB")
+            payload["audio_base64"] = base64.b64encode(path.read_bytes()).decode("ascii")
+            payload.setdefault("audio_extension", path.suffix.lower().lstrip("."))
+    team_id = _resolve_team_id(args, config)
+    if team_id:
+        payload["team_id"] = team_id
+    if operation in SYNC_DIRECT_OPERATIONS:
+        result = api_direct_operation(config, operation, payload, dry_run=dry_run)
+        if dry_run:
+            result["body"] = {
+                **result["body"],
+                "audio_base64": f"<redacted: {len(payload.get('audio_base64', ''))} base64 characters>",
+            }
+        elif operation == "voice-convert":
+            audio, extension = _decode_audio_result(result.get("audio_data"), "wav")
+            result = {"audio_file": _save_audio_result(audio, "voice-convert-", extension)}
+        else:
+            output_format = payload.get("output_format", "mp3")
+            vocals, vocals_ext = _decode_audio_result(result.get("vocals"), output_format)
+            other, other_ext = _decode_audio_result(result.get("other"), output_format)
+            result = {
+                "vocals_file": _save_audio_result(vocals, "vocals-", vocals_ext),
+                "other_file": _save_audio_result(other, "other-", other_ext),
+            }
+    else:
+        result = submit_and_poll(
+            config, operation,
+            lambda cfg, *, dry_run=False: api_direct_operation(cfg, operation, payload, dry_run=dry_run),
+            {}, no_wait=args.no_wait, dry_run=dry_run,
+        )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _decode_audio_result(value: Any, default_extension: str) -> Tuple[bytes, str]:
+    """Decode a synchronous GPU audio response without exposing it in CLI output."""
+    if not isinstance(value, str) or not value:
+        raise ArtClawApiError("GPU returned no audio data", code="invalid_audio_result")
+    extension = default_extension
+    if value.startswith("data:"):
+        header, separator, value = value.partition(",")
+        match = re.fullmatch(r"data:audio/([\w.+-]+);base64", header, re.IGNORECASE)
+        if not separator or not match:
+            raise ArtClawApiError("GPU returned an invalid audio data URI", code="invalid_audio_result")
+        extension = {
+            "wav": "wav", "x-wav": "wav", "wave": "wav",
+            "mpeg": "mp3", "mp3": "mp3", "ogg": "ogg",
+            "flac": "flac", "x-flac": "flac", "mp4": "m4a",
+            "x-m4a": "m4a",
+        }.get(match.group(1).lower(), default_extension)
+    try:
+        audio = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ArtClawApiError("GPU returned invalid Base64 audio", code="invalid_audio_result") from exc
+    if not audio:
+        raise ArtClawApiError("GPU returned empty audio data", code="invalid_audio_result")
+    return audio, extension
+
+
+def _save_audio_result(audio: bytes, prefix: str, extension: str) -> str:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="wb", prefix=prefix, suffix=f".{extension}", dir=OUTPUT_DIR, delete=False,
+    ) as handle:
+        handle.write(audio)
+        return str(Path(handle.name).resolve())
+
 
 def cmd_verify_key(args, config: dict):
     """Verify an API key is valid (no auth required)."""
@@ -2021,7 +2193,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reference-files", nargs="+", default=None,
                    help="Reference images (local file paths, auto-converted to base64)")
     p.add_argument("--model", default=None, help="Model ID override")
-    p.add_argument("--n", type=int, default=None, help="Legacy option; ignored by current REST")
+    p.add_argument("--n", type=int, choices=[1, 2, 4], default=None,
+                   help="Output images per job: 1, 2 or 4")
     p.add_argument("--quality", default=None,
                    help="GT-Image-2.5 / GT-Image-2.5-Flash: low/medium/high/xhigh/max (default: high); "
                         "GT-Image-2: auto/low/medium/high. Validated by the API.")
@@ -2112,6 +2285,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--persona-id", default=None, help="Persona ID for voice cloning")
     p.add_argument("--duration", type=int, default=None,
                    help="Audio duration in seconds (10-360, Suvo V5.5 custom mode only)")
+    p.add_argument("--operation", choices=["generate", "upload_cover", "mashup"], default=None)
+    p.add_argument("--reference-audio-urls", nargs="+", default=None)
+    p.add_argument("--video-url", default=None)
+    p.add_argument("--video-id", default=None)
+    p.add_argument("--sound-effect-prompt", default=None)
+    p.add_argument("--bgm-prompt", default=None)
+    p.add_argument("--asmr-mode", action="store_true", default=False)
     p.add_argument("--team-id", default=None,
                    help="Team UUID — bill to the team's credits instead of the account")
     p.add_argument("--spawn", action="store_true", default=False,
@@ -2130,6 +2310,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--team-id", default=None,
                    help="Team UUID — bill to the team's credits instead of the account")
     _add_dry_run(p)
+
+    for command in DIRECT_OPERATIONS:
+        p = sub.add_parser(command, help=f"Direct {command} generation operation")
+        p.add_argument("--input", required=True,
+                       help="JSON object or @UTF-8-JSON-file with operation-specific fields")
+        p.add_argument("--team-id", default=None,
+                       help="Team UUID; overrides ARTCLAW_TEAM_ID and config")
+        if command in SYNC_DIRECT_OPERATIONS:
+            _add_dry_run(p)
+        else:
+            _add_wait_and_dry_run(p)
+            p.add_argument("--spawn", action="store_true", default=False)
+            p.add_argument("--deliver-to", default=None)
+            p.add_argument("--deliver-channel", default=None,
+                           choices=["feishu", "telegram", "discord"])
 
     # --- generate-text ---
     p = sub.add_parser("generate-text", help="Generate text / chat response from an LLM")
@@ -2358,6 +2553,7 @@ COMMAND_MAP = {
     "last-job": cmd_last_job,
     "history": cmd_history,
     "self-update": cmd_self_update,
+    **{name: cmd_direct_operation for name in DIRECT_OPERATIONS},
 }
 
 
@@ -2379,6 +2575,13 @@ def main():
     try:
         handler(args, config)
     except ArtClawApiError as e:
+        if args.command in DIRECT_OPERATIONS and (e.status_code >= 500 or e.code == "network_error"):
+            print(json.dumps({
+                "error": "outcome_unknown", "message": str(e),
+                "retryable": False, "do_not_resubmit": True,
+                "guidance": "Check billing and result before manually submitting again.",
+            }, indent=2, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
         if e.is_retryable():
             _log(f"[retryable] {e.to_dict()}")
             print(json.dumps({
