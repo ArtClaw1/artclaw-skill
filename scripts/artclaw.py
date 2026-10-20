@@ -18,7 +18,9 @@ import base64
 import json
 import os
 import re
+import shlex
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -86,16 +88,90 @@ JOB_TYPE_MAP = {
 
 # Validation sets (module-level, not created per call)
 VALID_ASPECT_RATIOS = frozenset({"16:9", "9:16", "1:1", "4:3", "21:9"})
-VALID_RESOLUTIONS_IMAGE = frozenset({"1K", "2K", "4K"})
-VALID_RESOLUTIONS_VIDEO = frozenset({"480p", "720p", "1080p"})
+VALID_RESOLUTIONS_IMAGE = frozenset({"512", "1K", "2K", "3K", "4K"})
+VALID_RESOLUTIONS_VIDEO = frozenset({"480p", "720p", "1080p", "4k"})
 TERMINAL_STATUSES = frozenset({"success", "failed", "canceled", "expired"})
 ALLOWED_URL_SCHEMES = ("http://", "https://")
 ALLOWED_IMAGE_DATA_URI_PREFIX = "data:image/"
 
 
+def _aspect_ratio(value: str) -> str:
+    if value in ("auto", "adaptive") or re.fullmatch(r"[1-9]\d*:[1-9]\d*", value):
+        return value
+    raise argparse.ArgumentTypeError("Expected a positive W:H ratio, auto or adaptive")
+
+
+def _video_content_items(args, *, for_spawn: bool = False):
+    """Read typed references; relative media paths use the caller's cwd."""
+    raw = getattr(args, "content_items", None)
+    if raw is None:
+        return None
+    try:
+        if getattr(args, "reference_urls", None) or getattr(args, "reference_files", None):
+            raise ValueError("--content-items cannot be combined with legacy reference flags")
+        if raw.startswith("@"):
+            raw = Path(raw[1:]).read_text(encoding="utf-8-sig")
+        items = json.loads(raw)
+        if not isinstance(items, list) or not items:
+            raise ValueError("--content-items must be a non-empty JSON array")
+        result = []
+        for item in items:
+            if not isinstance(item, dict) or set(item) != {"role", "url"}:
+                raise ValueError("Each content item must contain exactly role and url")
+            role, url = item["role"], item["url"]
+            media = {"first_frame": "image", "last_frame": "image",
+                     "reference_image": "image", "reference_video": "video",
+                     "reference_audio": "audio"}.get(role) if isinstance(role, str) else None
+            if not media or not isinstance(url, str) or not url:
+                raise ValueError("Each content item needs a valid media role and non-empty url")
+            if args.command == "generate-video" and media != "image" and not url.startswith(ALLOWED_URL_SCHEMES):
+                raise ValueError(
+                    "generate-video requires HTTP(S) URLs for video/audio references; "
+                    "its REST route cannot resolve inline video/audio"
+                )
+            if media == "video" and not url.startswith(ALLOWED_URL_SCHEMES):
+                raise ValueError("Video references require HTTP(S) URLs")
+            local_path = None
+            if url.startswith("@"):
+                local_path = Path(url[1:]).resolve()
+                if local_path.stat().st_size > MAX_REFERENCE_BYTES:
+                    raise ValueError("Reference media exceeds the 10 MB inline limit; use a hosted URL")
+                url = _file_to_data_uri(str(local_path))
+            if url.startswith("data:"):
+                if not url.startswith(f"data:{media}/") or ";base64," not in url:
+                    raise ValueError(f"{role} requires a {media} base64 data URI")
+            elif not url.startswith(ALLOWED_URL_SCHEMES):
+                raise ValueError("Reference URL must use http(s), a data URI or @local-file")
+            result.append({"role": role, "url": f"@{local_path}" if for_spawn and local_path else url})
+        return result
+    except (ValueError, OSError) as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
+
+
 def _is_seedance25_model(model: Optional[str]) -> bool:
     normalized = (model or "").lower().replace(".", "-").replace("_", "-")
     return bool(re.search(r"(?:^|-)seedance-2-5(?:-|$)", normalized))
+
+
+def _spawn_content_argument(items: List[dict]) -> str:
+    """Keep large reference payloads out of the child process command line."""
+    serialized = json.dumps(items, ensure_ascii=False)
+    if len(serialized.encode("utf-8")) <= 8192:
+        return serialized
+    try:
+        directory = STATE_DIR / "spawn-inputs"
+        directory.mkdir(parents=True, exist_ok=True)
+        # Keep the file for delayed execution and retries, like local job history.
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".json", prefix="video-",
+            dir=directory, delete=False,
+        ) as handle:
+            handle.write(serialized)
+            return f"@{Path(handle.name).resolve()}"
+    except OSError as exc:
+        print(json.dumps({"error": f"Cannot save spawn references: {exc}"}), file=sys.stderr)
+        sys.exit(1)
 
 
 def _validate_video_output_format_model(model: Optional[str], output_format: Optional[str]):
@@ -556,10 +632,14 @@ def api_generate_image(config: dict, prompt: str, *,
                        callback_url: str = None,
                        n: int = None, seed: int = None,
                        quality: str = None,
+                       background: str = None,
                        output_format: str = None,
                        negative_prompt: str = None,
                        style: str = None, guidance_scale: float = None,
                        watermark: bool = None,
+                       online_search: bool = None,
+                       moderation: str = None,
+                       sequential_image_generation: str = None,
                        team_id: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
@@ -578,6 +658,8 @@ def api_generate_image(config: dict, prompt: str, *,
         body["n"] = n
     if quality is not None and quality.strip():
         body["quality"] = quality
+    if background is not None and background.strip():
+        body["background"] = background
     if seed is not None:
         body["seed"] = seed
     if output_format:
@@ -590,6 +672,10 @@ def api_generate_image(config: dict, prompt: str, *,
         body["guidance_scale"] = guidance_scale
     if watermark is not None:
         body["watermark"] = watermark
+    for key, value in (("online_search", online_search), ("moderation", moderation),
+                       ("sequential_image_generation", sequential_image_generation)):
+        if value is not None:
+            body[key] = value
     if team_id:
         body["team_id"] = team_id
     return _request_with_retry(
@@ -606,6 +692,9 @@ def api_generate_video(config: dict, prompt: str, *,
                        callback_url: str = None,
                        generate_audio: bool = None,
                        output_format: str = None,
+                       content_items: List[dict] = None,
+                       seed: int = None, online_search: bool = None,
+                       omni_reference_task_type: str = None,
                        team_id: str = None,
                        idempotency_key: str = None,
                        dry_run: bool = False) -> dict:
@@ -618,6 +707,11 @@ def api_generate_video(config: dict, prompt: str, *,
         body["resolution"] = resolution
     if reference_urls:
         body["content_items"] = [{"role": "reference_image", "url": u} for u in reference_urls]
+    for key, value in (("content_items", content_items), ("seed", seed),
+                       ("online_search", online_search),
+                       ("omni_reference_task_type", omni_reference_task_type)):
+        if value is not None:
+            body[key] = value
     if model:
         body["model"] = model
     if callback_url:
@@ -728,6 +822,9 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
                                 resolution: str = None, seed: int = None,
                                 generate_audio: bool = None,
                                 output_format: str = None,
+                                content_items: List[dict] = None,
+                                online_search: bool = None,
+                                watermark: bool = None,
                                 return_last_frame: bool = None,
                                 execution_expires_after: int = None,
                                 safety_identifier: str = None,
@@ -740,6 +837,14 @@ def api_generate_seedance_video(config: dict, prompt: str, *,
         "content": [{"type": "text", "text": prompt}],
         "model": model,
     }
+    for item in content_items or []:
+        media = {"reference_video": "video", "reference_audio": "audio"}.get(item["role"], "image")
+        key = f"{media}_url"
+        body["content"].append({"type": key, key: {"url": item["url"]}, "role": item["role"]})
+    if online_search is not None:
+        body["tools"] = [{"type": "web_search"}] if online_search else []
+    if watermark is not None:
+        body["watermark"] = watermark
     if aspect_ratio:
         body["ratio"] = aspect_ratio
     if duration is not None:
@@ -1092,10 +1197,13 @@ def build_spawn_task(
 
     cmd_parts = ["python3", script_path, subcommand]
     for key, value in args_dict.items():
+        if key == "online_search" and value is False:
+            cmd_parts.append("--no-online-search")
+            continue
         if value is None or value is False:
             continue
         # Empty image quality uses the API default; do not emit a flag without a value.
-        if key == "quality" and isinstance(value, str) and not value.strip():
+        if key in ("quality", "background") and isinstance(value, str) and not value.strip():
             continue
         flag = f"--{key.replace('_', '-')}"
         if isinstance(value, bool) and value:
@@ -1104,11 +1212,9 @@ def build_spawn_task(
             cmd_parts.append(flag)
             cmd_parts.extend(str(v) for v in value)
         else:
-            cmd_parts.extend([flag, json.dumps(str(value), ensure_ascii=False)
-                              if isinstance(value, str) and " " in value
-                              else str(value)])
+            cmd_parts.extend([flag, str(value)])
 
-    cmd_str = " ".join(cmd_parts)
+    cmd_str = shlex.join(cmd_parts)
     base_dir = str(Path(__file__).resolve().parent.parent)
     deliver_to_str = deliver_to or "<user_id>"
     deliver_channel_str = deliver_channel or "feishu"
@@ -1186,7 +1292,8 @@ def cmd_generate_image(args, config: dict):
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "resolution", "model", "callback_url",
         "n", "seed", "output_format", "negative_prompt",
-        "style", "guidance_scale", "quality",
+        "style", "guidance_scale", "quality", "background",
+        "online_search", "moderation", "sequential_image_generation",
     ]))
     api_kwargs["team_id"] = _resolve_team_id(args, config)
     if getattr(args, "watermark", None):
@@ -1198,7 +1305,7 @@ def cmd_generate_image(args, config: dict):
         if args.reference_urls:
             api_kwargs["reference_urls"] = args.reference_urls
         if getattr(args, "reference_files", None):
-            api_kwargs["reference_files"] = args.reference_files
+            api_kwargs["reference_files"] = [str(Path(p).resolve()) for p in args.reference_files]
 
         result = build_spawn_task(
             "generate-image", api_kwargs,
@@ -1236,20 +1343,24 @@ def cmd_generate_video(args, config: dict):
     api_kwargs: Dict[str, Any] = {"prompt": args.prompt}
     api_kwargs.update(_collect_optional_args(args, [
         "aspect_ratio", "duration", "resolution", "model", "callback_url",
-        "output_format",
+        "output_format", "seed", "online_search", "omni_reference_task_type",
     ]))
     _validate_video_output_format_model(
         api_kwargs.get("model"), api_kwargs.get("output_format"),
     )
     api_kwargs["team_id"] = _resolve_team_id(args, config)
+    spawn = _should_spawn(args)
+    content_items = _video_content_items(args, for_spawn=spawn)
+    if content_items is not None:
+        api_kwargs["content_items"] = _spawn_content_argument(content_items) if spawn else content_items
 
     # Handle spawn mode differently: don't convert files to base64 yet
-    if _should_spawn(args):
+    if spawn:
         # Pass reference URLs/files as-is to spawn task
         if args.reference_urls:
             api_kwargs["reference_urls"] = args.reference_urls
         if getattr(args, "reference_files", None):
-            api_kwargs["reference_files"] = args.reference_files
+            api_kwargs["reference_files"] = [str(Path(p).resolve()) for p in args.reference_files]
         if args.no_generate_audio:
             api_kwargs["no_generate_audio"] = True
 
@@ -1373,7 +1484,11 @@ def cmd_generate_seedance_video(args, config: dict):
         "aspect_ratio", "duration", "resolution", "seed",
         "execution_expires_after", "safety_identifier", "priority",
         "callback_url", "output_format",
+        "online_search", "watermark",
     ]))
+    content_items = _video_content_items(args)
+    if content_items is not None:
+        api_kwargs["content_items"] = content_items
     _validate_video_output_format_model(
         api_kwargs.get("model"), api_kwargs.get("output_format"),
     )
@@ -1640,10 +1755,15 @@ def cmd_spawn_task(args, config: dict):
         print(json.dumps({"error": "--quality is only supported for generate-image"}), file=sys.stderr)
         sys.exit(1)
 
+    background = getattr(args, "background", None)
+    if background is not None and args.subcommand != "generate-image":
+        print(json.dumps({"error": "--background is only supported for generate-image"}), file=sys.stderr)
+        sys.exit(1)
+
     args_dict: Dict[str, Any] = {"prompt": args.prompt}
     args_dict.update(_collect_optional_args(args, [
         "aspect_ratio", "resolution", "duration", "model",
-        "workflow_id", "inputs", "quality",
+        "workflow_id", "inputs", "quality", "background",
     ]))
     if args.reference_urls:
         args_dict["reference_urls"] = args.reference_urls
@@ -1872,6 +1992,14 @@ def _add_dry_run(parser):
                         help="Print what would be sent without making API calls")
 
 
+def _add_online_search(parser):
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--online-search", dest="online_search", action="store_true",
+                       default=None, help="Enable web search (supported models only)")
+    group.add_argument("--no-online-search", dest="online_search", action="store_false",
+                       help="Explicitly disable web search")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="artclaw",
@@ -1883,24 +2011,33 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("generate-image", help="Generate image from prompt")
     p.add_argument("--prompt", required=True, help="Text description of the image")
     p.add_argument("--aspect-ratio", default=None,
-                   choices=sorted(VALID_ASPECT_RATIOS),
+                   type=_aspect_ratio,
                    help="Aspect ratio (default: 16:9)")
     p.add_argument("--resolution", default=None,
                    choices=sorted(VALID_RESOLUTIONS_IMAGE),
-                   help="Resolution: 1K, 2K, 4K")
+                   help="Resolution: 512, 1K, 2K, 3K, 4K (model-dependent)")
     p.add_argument("--reference-urls", nargs="+", default=None,
                    help="Reference images (HTTPS URLs or base64: data:image/png;base64,...)")
     p.add_argument("--reference-files", nargs="+", default=None,
                    help="Reference images (local file paths, auto-converted to base64)")
     p.add_argument("--model", default=None, help="Model ID override")
-    p.add_argument("--n", type=int, default=None, help="Number of images to generate (1-10)")
+    p.add_argument("--n", type=int, default=None, help="Legacy option; ignored by current REST")
     p.add_argument("--quality", default=None,
-                   help="GT-Image-2.5 / GT-Image-2.5-Flash: low/high/max (default: high); "
+                   help="GT-Image-2.5 / GT-Image-2.5-Flash: low/medium/high/xhigh/max (default: high); "
                         "GT-Image-2: auto/low/medium/high. Validated by the API.")
+    p.add_argument("--background", default=None,
+                   help="GT-Image family background mode: auto/opaque/transparent. "
+                        "transparent needs an alpha-capable output format (png/webp), not jpeg. "
+                        "Validated by the API.")
     p.add_argument("--seed", type=int, default=None, help="Random seed (null=random)")
     p.add_argument("--output-format", default=None, help="Output format: png/jpeg/webp")
-    p.add_argument("--negative-prompt", default=None, help="Negative prompt")
-    p.add_argument("--style", default=None, help="Style description")
+    p.add_argument("--negative-prompt", default=None, help="Legacy option; ignored by current REST")
+    p.add_argument("--style", default=None, help="Legacy option; ignored by current REST")
+    _add_online_search(p)
+    p.add_argument("--moderation", choices=["auto", "low"], default=None,
+                   help="GT-Image moderation mode")
+    p.add_argument("--sequential-image-generation", choices=["auto", "disabled"], default=None,
+                   help="Seedream sequential image generation strategy")
     p.add_argument("--guidance-scale", type=float, default=None,
                    help="Text weight 1-10 (Seedance image models)")
     p.add_argument("--watermark", action="store_true", default=False,
@@ -1920,13 +2057,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("generate-video", help="Generate video from prompt")
     p.add_argument("--prompt", required=True, help="Text description of the video")
     p.add_argument("--aspect-ratio", default=None,
-                   choices=sorted(VALID_ASPECT_RATIOS),
+                   type=_aspect_ratio,
                    help="Aspect ratio (default: 16:9)")
     p.add_argument("--duration", type=int, default=None,
                    help="Video duration in seconds (model-dependent; Seedance 2.0: 4-15, Seedance 2.5: 4-30)")
     p.add_argument("--resolution", default=None,
                    choices=sorted(VALID_RESOLUTIONS_VIDEO),
-                   help="Resolution: 480p, 720p, 1080p")
+                   help="Resolution: 480p, 720p, 1080p, 4k (model-dependent)")
+    p.add_argument("--content-items", default=None,
+                   help="Ordered role/url JSON or @JSON-file; images allow @local-file, video/audio require HTTP(S)")
+    p.add_argument("--seed", type=int, default=None, help="Random seed")
+    _add_online_search(p)
+    p.add_argument("--omni-reference-task-type", choices=["auto", "reference", "edit", "extend"],
+                   default=None, help="Seedance 2.5 reference task; edit allows duration -1 and adaptive ratio")
     p.add_argument("--reference-urls", nargs="+", default=None,
                    help="Reference images for I2V (HTTPS URLs or base64)")
     p.add_argument("--reference-files", nargs="+", default=None,
@@ -2020,13 +2163,19 @@ def build_parser() -> argparse.ArgumentParser:
                             "doubao-seedance-2-5-260628"],
                    help="Seedance 2.0/2.5 model")
     p.add_argument("--aspect-ratio", default="16:9",
-                   choices=["1:1", "3:4", "4:3", "9:16", "16:9", "21:9"],
+                   type=_aspect_ratio,
                    help="Aspect ratio")
     p.add_argument("--duration", type=int, default=5,
                    help="Duration in seconds (Seedance 2.0: 4-15; Seedance 2.5: 4-30)")
     p.add_argument("--resolution", default="720p",
-                   choices=["480p", "720p", "1080p"],
+                   choices=sorted(VALID_RESOLUTIONS_VIDEO),
                    help="Resolution")
+    p.add_argument("--content-items", default=None,
+                   help="Ordered role/url JSON or @JSON-file; images/audio allow @local-file, video requires HTTP(S)")
+    _add_online_search(p)
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--watermark", action="store_true", default=None)
+    group.add_argument("--no-watermark", dest="watermark", action="store_false")
     p.add_argument("--output-format", default=None, choices=["mp4", "mov"],
                    help="Output container for Seedance 2.5: mp4 or mov (default: mp4)")
     p.add_argument("--seed", type=int, default=None, help="Random seed")
@@ -2152,7 +2301,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workflow-id", default=None, help="Workflow ID")
     p.add_argument("--quality", default=None,
                    help="Image generation only; GT-Image-2.5 / GT-Image-2.5-Flash: "
-                        "low/high/max (default: high); GT-Image-2: auto/low/medium/high")
+                        "low/medium/high/xhigh/max (default: high); GT-Image-2: auto/low/medium/high")
+    p.add_argument("--background", default=None,
+                   help="Image generation only; GT-Image family background mode: auto/opaque/transparent")
     p.add_argument("--inputs", default=None, help="Workflow inputs (JSON)")
     p.add_argument("--reference-urls", nargs="+", default=None,
                    help="Reference URLs")
