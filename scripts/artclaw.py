@@ -15,6 +15,7 @@ All results output to stdout as JSON. Progress/diagnostics go to stderr.
 
 import argparse
 import base64
+import binascii
 import json
 import os
 import re
@@ -24,7 +25,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import requests
@@ -45,6 +46,7 @@ STATE_DIR = Path(os.path.expanduser("~/.artclaw"))
 CONFIG_FILE = STATE_DIR / "config.json"
 LAST_JOB_FILE = STATE_DIR / "last_job.json"
 HISTORY_DIR = STATE_DIR / "history"
+OUTPUT_DIR = STATE_DIR / "outputs"
 
 # API
 DEFAULT_BASE_URL = "https://artclaw.com/api/v1"
@@ -1804,6 +1806,22 @@ def cmd_direct_operation(args, config: dict):
         payload["team_id"] = team_id
     if operation in SYNC_DIRECT_OPERATIONS:
         result = api_direct_operation(config, operation, payload, dry_run=dry_run)
+        if dry_run:
+            result["body"] = {
+                **result["body"],
+                "audio_base64": f"<redacted: {len(payload.get('audio_base64', ''))} base64 characters>",
+            }
+        elif operation == "voice-convert":
+            audio, extension = _decode_audio_result(result.get("audio_data"), "wav")
+            result = {"audio_file": _save_audio_result(audio, "voice-convert-", extension)}
+        else:
+            output_format = payload.get("output_format", "mp3")
+            vocals, vocals_ext = _decode_audio_result(result.get("vocals"), output_format)
+            other, other_ext = _decode_audio_result(result.get("other"), output_format)
+            result = {
+                "vocals_file": _save_audio_result(vocals, "vocals-", vocals_ext),
+                "other_file": _save_audio_result(other, "other-", other_ext),
+            }
     else:
         result = submit_and_poll(
             config, operation,
@@ -1811,6 +1829,41 @@ def cmd_direct_operation(args, config: dict):
             {}, no_wait=args.no_wait, dry_run=dry_run,
         )
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _decode_audio_result(value: Any, default_extension: str) -> Tuple[bytes, str]:
+    """Decode a synchronous GPU audio response without exposing it in CLI output."""
+    if not isinstance(value, str) or not value:
+        raise ArtClawApiError("GPU returned no audio data", code="invalid_audio_result")
+    extension = default_extension
+    if value.startswith("data:"):
+        header, separator, value = value.partition(",")
+        match = re.fullmatch(r"data:audio/([\w.+-]+);base64", header, re.IGNORECASE)
+        if not separator or not match:
+            raise ArtClawApiError("GPU returned an invalid audio data URI", code="invalid_audio_result")
+        extension = {
+            "wav": "wav", "x-wav": "wav", "wave": "wav",
+            "mpeg": "mp3", "mp3": "mp3", "ogg": "ogg",
+            "flac": "flac", "x-flac": "flac", "mp4": "m4a",
+            "x-m4a": "m4a",
+        }.get(match.group(1).lower(), default_extension)
+    try:
+        audio = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ArtClawApiError("GPU returned invalid Base64 audio", code="invalid_audio_result") from exc
+    if not audio:
+        raise ArtClawApiError("GPU returned empty audio data", code="invalid_audio_result")
+    return audio, extension
+
+
+def _save_audio_result(audio: bytes, prefix: str, extension: str) -> str:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="wb", prefix=prefix, suffix=f".{extension}", dir=OUTPUT_DIR, delete=False,
+    ) as handle:
+        handle.write(audio)
+        return str(Path(handle.name).resolve())
+
 
 def cmd_verify_key(args, config: dict):
     """Verify an API key is valid (no auth required)."""

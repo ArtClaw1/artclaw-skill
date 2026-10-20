@@ -117,10 +117,10 @@ Use the operation-specific CLI commands below with `--input @request.json` or an
 - smart-subtitles: supply video_url; optionally template_id. The job returns a subtitle asset URL.
 - ai-dubbing: supply video_url, original_subtitle_url, and translated_subtitle_url; optionally source_language, target_language, and template_id. The job returns a dubbed video and speaker metadata URL.
 - video-enhance: supply video_url and enhancement_mode (sr, lm, or fi). For Tencent, choose matching sr_type, lm_type, or fps_num. For Huoshan, use sr or lm with resolution and fps; enhance_style applies only to sr. The job returns a video.
-- voice-convert: supply model, spk_id, and audio_base64; optionally audio_extension, key, formant_shift_key, and pitch_extractor. Synchronous response: audio_data.
-- stem-separate: supply model and audio_base64; optionally audio_extension, output_format, and use_tta. Synchronous response: vocals and other.
+- voice-convert: supply model, spk_id, and audio_base64; optionally audio_extension, key, formant_shift_key, and pitch_extractor. The CLI saves the synchronous audio response and returns `audio_file` (absolute local path).
+- stem-separate: supply model and audio_base64; optionally audio_extension, output_format, and use_tta. The CLI saves both synchronous tracks and returns `vocals_file` and `other_file` (absolute local paths).
 
-All hosted media URLs must be public HTTPS URLs. For the two synchronous commands, `audio_base64` may be `@./audio.wav`; the CLI reads and encodes a local file up to 10 MB. Synchronous GPU requests may take several minutes. If a network timeout or 5xx follows any direct submission, the outcome may be unknown: check credits/results before manually retrying. The CLI never automatically retries direct POSTs. Do not print or retain large Base64 audio results unnecessarily.
+All hosted media URLs must be public HTTPS URLs. For the two synchronous commands, `audio_base64` may be `@./audio.wav`; the CLI reads and encodes a local file up to 10 MB. Successful outputs are saved with unique filenames under `~/.artclaw/outputs/`. These paths are local to the agent host; deliver or upload the files through the current platform adapter as needed. Dry-run previews redact `audio_base64` and create no output file. Synchronous GPU requests may take several minutes. If a network timeout or 5xx follows any direct submission, the outcome may be unknown: check credits/results before manually retrying. The CLI never automatically retries direct POSTs. Do not print or retain large Base64 audio results unnecessarily.
 
 ```bash
 python3 scripts/artclaw.py remove-bg-image \
