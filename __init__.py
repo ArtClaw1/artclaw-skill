@@ -10,7 +10,7 @@ Get your key: https://artclaw.com/settings
 """
 
 SKILL_NAME = "artclaw-creative-suite"
-SKILL_VERSION = "1.5.0"
+SKILL_VERSION = "1.6.0"
 API_BASE_URL = "https://artclaw.com/api/v1"
 
 API_CONFIG = {
@@ -37,6 +37,9 @@ ENDPOINTS = {
     "smart_subtitles": ("POST", "/generate/smart-subtitles"),
     "ai_dubbing": ("POST", "/generate/ai-dubbing"),
     "video_enhance": ("POST", "/generate/video-enhance"),
+    "video_edit": ("POST", "/generate/video-edit"),
+    "video_extend": ("POST", "/generate/video-extend"),
+    "video_timeline": ("POST", "/generate/video-timeline"),
     # Voice (async)
     "voice_stt": ("POST", "/generate/voice/stt"),
     "voice_tts": ("POST", "/generate/voice/tts"),

@@ -6,13 +6,14 @@ An all-in-one AI content creation skill powered by the [ARTCLAW](https://artclaw
 
 ## ✨ Features
 
-| Capability             | Description                                                                                        |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| 🖼️ AI Image Generation | Text-to-image, image-to-image, marketing visuals, product image sets                               |
-| 🎬 AI Video Generation | Text-to-video, image-to-video                                                                      |
-| 🔍 Multimodal Analysis | Image understanding, video analysis, script analysis, character profile extraction                 |
-| ⚡ Workflows           | Run preset pipelines in one click (animation / comics / e-commerce detail page, etc.)              |
-| ✏️ Prompt Tools        | Prompt optimization for logos, covers, marketing images, and carousels (free, no API key required) |
+| Capability             | Description                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 🖼️ AI Image Generation | Text-to-image, image-to-image, marketing visuals, product image sets                                                |
+| 🎬 AI Video Generation | Text-to-video, image-to-video                                                                                       |
+| 🎞️ Video Editing       | AI segment retake, video continuation and timeline cut/composition (`video-edit`, `video-extend`, `video-timeline`) |
+| 🔍 Multimodal Analysis | Image understanding, video analysis, script analysis, character profile extraction                                  |
+| ⚡ Workflows           | Run preset pipelines in one click (animation / comics / e-commerce detail page, etc.)                               |
+| ✏️ Prompt Tools        | Prompt optimization for logos, covers, marketing images, and carousels (free, no API key required)                  |
 
 ---
 
@@ -76,6 +77,6 @@ Then reload the Skill in your agent or start a new session that reads its update
 
 ## 📋 Version
 
-- **Version:** 1.3.0
+- **Version:** 1.6.0
 - **Author:** ARTCLAW Team
 - **License:** MIT
