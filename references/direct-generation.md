@@ -44,9 +44,9 @@ python3 scripts/artclaw.py generate-image \
 | `reference_video` | Video |
 | `reference_audio` | Audio |
 
-For `generate-video`, images can use HTTP(S), matching image base64 data URIs or `@local-file`; video/audio references must use HTTP(S) URLs because this REST route cannot resolve inline video/audio. The dedicated `generate-seedance-video` contract also supports audio data URIs and local audio. Video references require hosted HTTP(S) URLs in both commands; inline video is not verified by the public contract. Local media are inlined, with a 10 MB limit per file. All relative media paths resolve against the command's working directory, including paths inside a JSON file. Supported local extensions: JPG/JPEG/PNG/GIF/WebP/BMP; additionally MP3/WAV/M4A/OGG for the dedicated Seedance command. Larger files need an accessible hosted URL.
+Both commands accept `@local-file` for image, video and audio roles. Before submitting generation, the CLI uploads each local file through Creator's authenticated media-upload route and replaces it with the returned platform CDN URL. The generic REST route therefore receives hosted video/audio URLs; inline video/audio data URIs remain unsupported there. The dedicated Seedance command still accepts audio data URIs. Relative media paths resolve against the command's working directory, including paths inside a JSON file. Supported local formats are JPG/JPEG/PNG/WebP/GIF/BMP (30 MB), MP4/MOV (50 MB), and MP3/WAV/M4A/OGG/AAC/FLAC (50 MB). A provider may impose tighter duration, size or codec limits.
 
-The CLI validates the shape and media role; the service determines whether a model accepts the role, format, count and media duration. Prefer hosted URLs for video/audio references. Accepting a CLI option does not guarantee provider support.
+The CLI validates file extension against its media role and stops before generation if upload fails. The service determines whether a model accepts the role, format, count and media duration. Existing hosted URLs pass through unchanged. Accepting a CLI option does not guarantee provider support.
 
 Legacy `--reference-urls` and `--reference-files` continue to mean reference images. They cannot be combined with `--content-items`. Use typed items for first/last frames. Multiple reference images do not by themselves reproduce a workflow's multi-segment video generation and composition.
 
@@ -58,6 +58,8 @@ Example `refs.json`:
   { "role": "last_frame", "url": "https://example.com/end.png" }
 ]
 ```
+
+For a local video reference, include `{ "role": "reference_video", "url": "@./clip.mp4" }`; local audio uses `reference_audio` and an audio file. A local file used twice in one command uploads once. A dry run shows `@absolute-path` without network calls, while `--spawn` defers upload to the child process (the file must be accessible there).
 
 ```bash
 python3 scripts/artclaw.py generate-video \
@@ -90,7 +92,7 @@ This exposes the existing video editing API; it does not implement workflow segm
 
 ## Direct video editing, extension, and timeline
 
-Use `video-edit` to **regenerate one selected interval** in an existing Creator video. Supply `start` and `end` in seconds (a single 4–30 second interval) and a prompt describing the replacement. The service reuses Creator's segment-retake task: it validates the real source media, prepares the segment, generates the replacement, and splices it back into the original. The source must be hosted at `https://assets.vicoo.ai`; upload external media to Creator first. Do not silently widen a short interval.
+Use `video-edit` to **regenerate one selected interval** in an existing Creator video. Supply `start` and `end` in seconds (a single 4–30 second interval) and a prompt describing the replacement. The service reuses Creator's segment-retake task: it validates the real source media, prepares the segment, generates the replacement, and splices it back into the original. A local `source_video_url` such as `@./source.mp4` is uploaded first; REST receives a `https://assets.vicoo.ai` URL. Do not silently widen a short interval.
 
 ```bash
 python3 scripts/artclaw.py video-edit --input '{"source_video_url":"https://assets.vicoo.ai/source.mp4","start":12,"end":18,"prompt":"Change the jacket to blue, preserving the motion"}' --no-wait
@@ -102,7 +104,7 @@ Use `video-extend` to continue an existing video by an **integer 4–30 seconds*
 python3 scripts/artclaw.py video-extend --input '{"source_video_url":"https://example.com/source.mp4","prompt":"Continue the camera move into the garden","duration":8}' --no-wait
 ```
 
-Use `video-timeline` to remove an interval. Timeline media must use the platform asset host `https://assets.vicoo.ai`; upload external media to Creator first. The service probes the actual source duration before submitting the cut, so `source_duration` is optional. If supplied, it must agree with the probed duration. Fractions are accepted. A 2-second cut such as 12–14 seconds is valid. The cut retains the source audio, and it is unrelated to AI retake.
+Use `video-timeline` to remove an interval. Timeline media uses the platform asset host `https://assets.vicoo.ai`; local video paths in `cut.source_video_url` or `video_clips[].url` are uploaded there before submission. The service probes the actual source duration before submitting the cut, so `source_duration` is optional. If supplied, it must agree with the probed duration. Fractions are accepted. A 2-second cut such as 12–14 seconds is valid. The cut retains the source audio, and it is unrelated to AI retake.
 
 ```bash
 python3 scripts/artclaw.py video-timeline --input '{"cut":{"source_video_url":"https://assets.vicoo.ai/source.mp4","start":12,"end":14}}' --no-wait
@@ -130,7 +132,7 @@ python3 scripts/artclaw.py generate-audio \
   --duration 60 --no-wait
 ```
 
-For a Suno reference cover use `--operation upload_cover --reference-audio-urls https://example.com/ref.mp3`; for a mashup use `--operation mashup --reference-audio-urls https://example.com/first.mp3 https://example.com/second.mp3`. Order is preserved. `--operation generate` takes no references. For Kling video-to-audio use `--provider kling --video-url https://example.com/clip.mp4 --sound-effect-prompt 'footsteps' --bgm-prompt 'subtle ambient' --asmr-mode`; `--video-id` may replace `--video-url`. These commands return a job; the final job result can contain multiple tracks.
+For a Suno reference cover use `--operation upload_cover --reference-audio-urls @./ref.mp3`; for a mashup use `--operation mashup --reference-audio-urls @./first.mp3 @./second.mp3`. Existing HTTPS URLs work as well and order is preserved. `--operation generate` takes no references. For Kling video-to-audio use `--provider kling --video-url @./clip.mp4 --sound-effect-prompt 'footsteps' --bgm-prompt 'subtle ambient' --asmr-mode`; `--video-id` may replace `--video-url`. Local files upload before the job; the final result can contain multiple tracks.
 
 ## Direct background removal, voice and postprocessing
 
@@ -145,10 +147,10 @@ Use the operation-specific CLI commands below with `--input @request.json` or an
 - smart-subtitles: supply video_url; optionally template_id. The job returns a subtitle asset URL.
 - ai-dubbing: supply video_url, original_subtitle_url, and translated_subtitle_url; optionally source_language, target_language, and template_id. The job returns a dubbed video and speaker metadata URL.
 - video-enhance: supply video_url and enhancement_mode (sr, lm, or fi). For Tencent, choose matching sr_type, lm_type, or fps_num. For Huoshan, use sr or lm with resolution and fps; enhance_style applies only to sr. The job returns a video.
-- voice-convert: supply model, spk_id, and audio_base64; optionally audio_extension, key, formant_shift_key, and pitch_extractor. The CLI saves the synchronous audio response and returns `audio_file` (absolute local path).
-- stem-separate: supply model and audio_base64; optionally audio_extension, output_format, and use_tta. The CLI saves both synchronous tracks and returns `vocals_file` and `other_file` (absolute local paths).
+- voice-convert: supply model, spk_id, and exactly one of audio_base64 or audio_url; optionally audio_extension, key, formant_shift_key, and pitch_extractor. The CLI saves the synchronous audio response and returns `audio_file` (absolute local path).
+- stem-separate: supply model and exactly one of audio_base64 or audio_url; optionally audio_extension, output_format, and use_tta. The CLI saves both synchronous tracks and returns `vocals_file` and `other_file` (absolute local paths).
 
-All hosted media URLs must be public HTTPS URLs. For the two synchronous commands, `audio_base64` may be `@./audio.wav`; the CLI reads and encodes a local file up to 10 MB. Successful outputs are saved with unique filenames under `~/.artclaw/outputs/`. These paths are local to the agent host; deliver or upload the files through the current platform adapter as needed. Dry-run previews redact `audio_base64` and create no output file. Synchronous GPU requests may take several minutes. If a network timeout or 5xx follows any direct submission, the outcome may be unknown: check credits/results before manually retrying. The CLI never automatically retries direct POSTs. Do not print or retain large Base64 audio results unnecessarily.
+All hosted media URLs must be public HTTPS URLs. In direct JSON media fields, `@./file` uploads a local image, video or audio before the operation. For the two synchronous audio commands, `audio_base64: "@./audio.wav"` uploads the local file (at most 10 MB) and sends its URL through REST, which decodes it for the existing GPU call; the CLI infers `audio_extension` from the local file and rejects a conflicting explicit value. Already-hosted `audio_url` must use the platform CDN. Existing raw Base64 remains supported. Successful outputs are saved with unique filenames under `~/.artclaw/outputs/`. These paths are local to the agent host; deliver or upload the files through the current platform adapter as needed. Dry-run previews redact raw `audio_base64` and create no output file. Synchronous GPU requests may take several minutes. If a network timeout or 5xx follows any direct submission, the outcome may be unknown: check credits/results before manually retrying. The CLI never automatically retries direct POSTs. Do not print or retain large Base64 audio results unnecessarily.
 
 ```bash
 python3 scripts/artclaw.py remove-bg-image \

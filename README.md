@@ -11,6 +11,7 @@ An all-in-one AI content creation skill powered by the [ARTCLAW](https://artclaw
 | 🖼️ AI Image Generation | Text-to-image, image-to-image, marketing visuals, product image sets                                                |
 | 🎬 AI Video Generation | Text-to-video, image-to-video                                                                                       |
 | 🎞️ Video Editing       | AI segment retake, video continuation and timeline cut/composition (`video-edit`, `video-extend`, `video-timeline`) |
+| 📁 Local Media         | Upload local image, video or audio before generation; use its Creator CDN URL in supported media inputs and queues  |
 | 🔍 Multimodal Analysis | Image understanding, video analysis, script analysis, character profile extraction                                  |
 | ⚡ Workflows           | Run preset pipelines in one click (animation / comics / e-commerce detail page, etc.)                               |
 | ✏️ Prompt Tools        | Prompt optimization for logos, covers, marketing images, and carousels (free, no API key required)                  |
@@ -55,6 +56,8 @@ Help me create a cyberpunk-style cat illustration
 Use this product image to generate an e-commerce carousel set
 ```
 
+Local image, video and audio files can be used throughout supported generation commands. Mark a media input as `@path`; the Skill uploads it to Creator before task creation and passes the resulting CDN URL in the original field or reference queue. Existing URLs remain unchanged. The file must be accessible to the agent process. See [direct generation controls](references/direct-generation.md) for examples and supported formats.
+
 To choose one of the new image models:
 
 ```text
@@ -77,6 +80,6 @@ Then reload the Skill in your agent or start a new session that reads its update
 
 ## 📋 Version
 
-- **Version:** 1.6.0
+- **Version:** 1.7.0
 - **Author:** ARTCLAW Team
 - **License:** MIT
