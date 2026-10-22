@@ -92,13 +92,13 @@ This exposes the existing video editing API; it does not implement workflow segm
 
 ## Direct video editing, extension, and timeline
 
-Use `video-edit` to **regenerate one selected interval** in an existing Creator video. Supply `start` and `end` in seconds (a single 4–30 second interval) and a prompt describing the replacement. The service reuses Creator's segment-retake task: it validates the real source media, prepares the segment, generates the replacement, and splices it back into the original. A local `source_video_url` such as `@./source.mp4` is uploaded first; REST receives a `https://assets.vicoo.ai` URL. Do not silently widen a short interval.
+Use `video-edit` to **regenerate one selected interval** in an existing Creator video. This command is segment retake, not a general-purpose editor. Supply `start` and `end` in seconds (a single 4–30 second interval) and a prompt describing the replacement. Optional `reference_image_urls`, `reference_video_urls`, and `reference_audio_urls` guide the generated segment; the source video remains the parent for the splice. The service reuses Creator's segment-retake task: it validates the real source media, prepares the segment, generates the replacement, and splices it back into the original. Local media such as `@./source.mp4` and `@./prop.jpg` is uploaded first; REST receives `https://assets.vicoo.ai` URLs. Do not silently widen a short interval.
 
 ```bash
-python3 scripts/artclaw.py video-edit --input '{"source_video_url":"https://assets.vicoo.ai/source.mp4","start":12,"end":18,"prompt":"Change the jacket to blue, preserving the motion"}' --no-wait
+python3 scripts/artclaw.py video-edit --input '{"source_video_url":"@./source.mp4","reference_image_urls":["@./prop.jpg"],"reference_video_urls":["@./motion.mp4"],"reference_audio_urls":["@./voice.wav"],"start":12,"end":18,"prompt":"Replace the prop while preserving the motion"}' --no-wait
 ```
 
-Use `video-extend` to continue an existing video by an **integer 4–30 seconds**. The source is the first model video reference. Both operations accept optional `resolution` (`480p`/`720p`/`1080p`), `output_format` (`mp4`/`mov`), and `generate_audio`; `video-edit` additionally accepts `source` to preserve the source container. Only `video-extend` accepts `reference_image_urls`, `reference_video_urls`, and `reference_audio_urls`. `video-edit` returns one pollable task backed by Creator's existing retake executor; `video-extend` uses the existing generation job.
+Use `video-extend` to continue an existing video by an **integer 4–30 seconds**. The source is the first model video reference. Both operations accept optional `resolution` (`480p`/`720p`/`1080p`), `output_format` (`mp4`/`mov`), `generate_audio`, and reference image/video/audio URL arrays; `video-edit` additionally accepts `source` to preserve the source container. `video-edit` returns one pollable task backed by Creator's existing retake executor; `video-extend` uses the existing generation job.
 
 ```bash
 python3 scripts/artclaw.py video-extend --input '{"source_video_url":"https://example.com/source.mp4","prompt":"Continue the camera move into the garden","duration":8}' --no-wait
