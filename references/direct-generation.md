@@ -70,7 +70,7 @@ The dedicated Seedance command maps these items to Ark `content` after the text 
 
 ## Video controls and editing
 
-Generic `generate-video` adds `--seed`, `--online-search` / `--no-online-search`, and `--omni-reference-task-type auto|reference|edit|extend`. Search and task types remain model-dependent. Use the generic command for Seedance 2.5 editing/extension.
+Generic `generate-video` adds `--seed`, `--online-search` / `--no-online-search`, and `--omni-reference-task-type auto|reference|edit|extend`. Search and task types remain model-dependent. Prefer the task-specific commands below for a source video; the generic flags remain available for compatibility.
 
 To edit a source video, save the following as `edit-refs.json`:
 
@@ -87,6 +87,34 @@ python3 scripts/artclaw.py generate-video \
 ```
 
 This exposes the existing video editing API; it does not implement workflow segment selection, retake and stitching. `extend` likewise requests the provider task type, without the workflow node's surrounding composition.
+
+## Direct video editing, extension, and timeline
+
+Use `video-edit` to **regenerate one selected interval** in an existing Creator video. Supply `start` and `end` in seconds (a single 4–30 second interval) and a prompt describing the replacement. The service reuses Creator's segment-retake task: it validates the real source media, prepares the segment, generates the replacement, and splices it back into the original. The source must be hosted at `https://assets.vicoo.ai`; upload external media to Creator first. Do not silently widen a short interval.
+
+```bash
+python3 scripts/artclaw.py video-edit --input '{"source_video_url":"https://assets.vicoo.ai/source.mp4","start":12,"end":18,"prompt":"Change the jacket to blue, preserving the motion"}' --no-wait
+```
+
+Use `video-extend` to continue an existing video by an **integer 4–30 seconds**. The source is the first model video reference. Both operations accept optional `resolution` (`480p`/`720p`/`1080p`), `output_format` (`mp4`/`mov`), and `generate_audio`; `video-edit` additionally accepts `source` to preserve the source container. Only `video-extend` accepts `reference_image_urls`, `reference_video_urls`, and `reference_audio_urls`. `video-edit` returns one pollable task backed by Creator's existing retake executor; `video-extend` uses the existing generation job.
+
+```bash
+python3 scripts/artclaw.py video-extend --input '{"source_video_url":"https://example.com/source.mp4","prompt":"Continue the camera move into the garden","duration":8}' --no-wait
+```
+
+Use `video-timeline` to remove an interval. Timeline media must use the platform asset host `https://assets.vicoo.ai`; upload external media to Creator first. The service probes the actual source duration before submitting the cut, so `source_duration` is optional. If supplied, it must agree with the probed duration. Fractions are accepted. A 2-second cut such as 12–14 seconds is valid. The cut retains the source audio, and it is unrelated to AI retake.
+
+```bash
+python3 scripts/artclaw.py video-timeline --input '{"cut":{"source_video_url":"https://assets.vicoo.ai/source.mp4","start":12,"end":14}}' --no-wait
+```
+
+For general timeline composition, pass `video_clips` in playback order. Video clips support `url`, `trim_start`, and optional `trim_end`; clips concatenate without gaps. The output is MP4. The deployed compositor does not reliably apply arbitrary video placement, fades, speed with synchronized source audio, or external audio length limiting, so these controls and `audio_clips` are not accepted by the public request. Source video audio remains available. Add or replace an external soundtrack through the Creator workflow until the compositor can constrain its duration.
+
+```bash
+python3 scripts/artclaw.py video-timeline --input '{"video_clips":[{"url":"https://assets.vicoo.ai/one.mp4","trim_start":2,"trim_end":6},{"url":"https://assets.vicoo.ai/two.mp4"}]}' --no-wait
+```
+
+All three commands support `--team-id` (flag > `ARTCLAW_TEAM_ID` > config), `--spawn`, and `--no-wait`. A team must be verified by the service before task submission. Poll the returned job with `job-status --job-id ...`; never resubmit automatically after a poll timeout or an unknown POST outcome. If the instruction “edit 12–14 seconds” does not say whether to cut or regenerate, ask. A two-second **cut** is valid; a two-second **AI retake** is not. Ask the user to choose a 4–30 second retake interval, never widen it automatically.
 
 Video resolutions include `480p/720p/1080p/4k`. `4k` is available for Seedance 2.0, not Seedance 2.5. Seedance 2.0 Fast/Mini use `480p/720p`; 2.5 supports up to `1080p`, with MP4/MOV output. Other model restrictions remain service-authoritative.
 

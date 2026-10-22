@@ -161,7 +161,7 @@ ARTCLAW is ready. Here is everything I can create, the models available, and wha
 | 🎙️ Text→Speech | `tts` | speakers: ★`en_male_tim_uranus_bigtts` · `zh_female_shuangkuaishu_moon_bigtts` · … | text → audio · pick voice via `--speaker` · async |
 | ✂️ Remove BG | `remove-bg`, `remove-bg-image`, `remove-bg-video` | PhotoRoom · chroma key · Aliyun | image and video background removal |
 | 🎙️ Voice | `voice-clone`, `voice-convert`, `stem-separate` | Seed Audio · IndexTTS · DDSP/UVR | clone speech, convert timbre, separate stems |
-| 🎞️ Editing | `video-retalk`, `image-enhance`, `smart-erase`, `smart-subtitles`, `ai-dubbing`, `video-enhance` | Creator's active providers | lip sync, enhancement, subtitle removal/extraction, dubbing |
+| 🎞️ Editing | `video-edit`, `video-extend`, `video-timeline`, `video-retalk`, `image-enhance`, `smart-erase`, `smart-subtitles`, `ai-dubbing`, `video-enhance` | Creator segment retake, Seedance 2.5 extend, compositor | selected-interval AI retake, continuation, timeline cuts/composition and other postprocessing |
 | 🧩 Workflow | `list-workflows` / `run-workflow` | preset workflows (run `list-workflows` to see them) | run a preset pipeline with JSON inputs |
 | 🧩 Workflow (DSL) | `run-workflow-dsl` | workflow DSL YAML source | run a workflow defined by DSL, compiled server-side |
 
@@ -322,6 +322,8 @@ python3 scripts/artclaw.py generate-video \
 `generate-seedance-video` accepts the same `--output-format mp4|mov` option. Explicit output format selection requires `--model doubao-seedance-2-5-260628`; MP4 remains the default when the option is omitted.
 
 Typed first/last frames and video/audio references use `--content-items`; generic video also supports `--seed`, search and Seedance 2.5 task types. See [Video references and editing](references/direct-generation.md#video-references).
+
+For an existing video, route by intent: regenerate one selected interval → `video-edit` with `source_video_url`, `start`, `end`, and `prompt`; generate additional seconds after it → `video-extend`; cut, reorder or concatenate clips → `video-timeline`. Retake and timeline media must be platform-hosted at `https://assets.vicoo.ai`; external audio tracks are not supported by the timeline command. A timeline cut probes the source duration automatically, so do not ask the user to supply `source_duration`. These are separate billable operations. `video-edit` reuses Creator's deployed segment-retake chain and supports exactly one 4–30 second interval. If a user says only “edit 12–14 seconds”, ask whether to **cut** that interval or **regenerate its visual content** before submitting. For a 12–14 second retake request, explain the 4-second minimum and ask the user to choose a new range; never silently widen it or substitute timeline cutting. A 12–14 second _cut_ is valid. See [direct video editing examples](references/direct-generation.md#direct-video-editing-extension-and-timeline).
 
 ### Generate Audio
 

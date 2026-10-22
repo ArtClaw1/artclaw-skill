@@ -1,6 +1,6 @@
 {
   "name": "artclaw-creative-suite",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "displayName": "ARTCLAW AI Creative Suite",
   "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, text generation, voice STT/TTS, workflow execution, model selection guidance, and more.",
   "author": {
@@ -127,7 +127,10 @@
           "mode": "async"
         },
         "ai-dubbing": { "method": "POST", "path": "/generate/ai-dubbing", "mode": "async" },
-        "video-enhance": { "method": "POST", "path": "/generate/video-enhance", "mode": "async" }
+        "video-enhance": { "method": "POST", "path": "/generate/video-enhance", "mode": "async" },
+        "video-edit": { "method": "POST", "path": "/generate/video-edit", "mode": "async" },
+        "video-extend": { "method": "POST", "path": "/generate/video-extend", "mode": "async" },
+        "video-timeline": { "method": "POST", "path": "/generate/video-timeline", "mode": "async" }
       },
       "voice": {
         "stt": {

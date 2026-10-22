@@ -17,6 +17,7 @@ import argparse
 import base64
 import binascii
 import json
+import math
 import os
 import re
 import shlex
@@ -26,6 +27,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 try:
     import requests
@@ -94,6 +96,9 @@ JOB_TYPE_MAP = {
     "smart-subtitles": "video",
     "ai-dubbing": "video",
     "video-enhance": "video",
+    "video-edit": "video",
+    "video-extend": "video",
+    "video-timeline": "video",
 }
 
 DIRECT_OPERATIONS = {
@@ -108,8 +113,12 @@ DIRECT_OPERATIONS = {
     "smart-subtitles": "smart-subtitles",
     "ai-dubbing": "ai-dubbing",
     "video-enhance": "video-enhance",
+    "video-edit": "video-edit",
+    "video-extend": "video-extend",
+    "video-timeline": "video-timeline",
 }
 SYNC_DIRECT_OPERATIONS = frozenset({"voice-convert", "stem-separate"})
+VIDEO_DIRECT_OPERATIONS = frozenset({"video-edit", "video-extend", "video-timeline"})
 
 # Validation sets (module-level, not created per call)
 VALID_ASPECT_RATIOS = frozenset({"16:9", "9:16", "1:1", "4:3", "21:9"})
@@ -1780,6 +1789,8 @@ def cmd_direct_operation(args, config: dict):
     if not isinstance(payload, dict):
         raise ValueError("--input must be a JSON object")
     operation = args.command
+    if operation in VIDEO_DIRECT_OPERATIONS:
+        _validate_video_direct_payload(operation, payload)
     if getattr(args, "callback_url", None):
         payload["callback_url"] = args.callback_url
     if _should_spawn(args):
@@ -1829,6 +1840,102 @@ def cmd_direct_operation(args, config: dict):
             {}, no_wait=args.no_wait, dry_run=dry_run,
         )
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _timeline_media_url(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    try:
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == "assets.vicoo.ai"
+            and parsed.port is None
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path.startswith("/")
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
+def _validate_video_direct_payload(operation: str, payload: dict) -> None:
+    """Reject obvious invalid video tasks before spawning or submitting a paid POST."""
+    if operation == "video-edit":
+        allowed = {"source_video_url", "prompt", "start", "end", "resolution",
+                   "output_format", "generate_audio", "team_id", "callback_url"}
+        unknown = set(payload) - allowed
+        if unknown:
+            raise ValueError(f"unsupported video-edit field: {sorted(unknown)[0]}")
+        if not _timeline_media_url(payload.get("source_video_url")):
+            raise ValueError("video-edit requires an https://assets.vicoo.ai source_video_url")
+        if not isinstance(payload.get("prompt"), str) or not payload["prompt"].strip():
+            raise ValueError("video-edit requires a non-empty prompt")
+        start, end = payload.get("start"), payload.get("end")
+        if not _finite_number(start) or not _finite_number(end) or start < 0 or not 4 <= end - start <= 30:
+            raise ValueError("video-edit interval must be 4 to 30 seconds")
+        if payload.get("resolution", "720p") not in {"480p", "720p", "1080p"}:
+            raise ValueError("unsupported video-edit resolution")
+        if payload.get("output_format", "source") not in {"source", "mp4", "mov"}:
+            raise ValueError("unsupported video-edit output_format")
+        if "generate_audio" in payload and not isinstance(payload["generate_audio"], bool):
+            raise ValueError("video-edit generate_audio must be boolean")
+        return
+    if operation == "video-extend":
+        allowed = {"source_video_url", "prompt", "resolution", "output_format", "generate_audio",
+                   "reference_image_urls", "reference_video_urls", "reference_audio_urls",
+                   "team_id", "callback_url"}
+        if operation == "video-extend":
+            allowed.add("duration")
+        unknown = set(payload) - allowed - {"start", "end", "segments", "cut", "duration"}
+        if unknown:
+            raise ValueError(f"unsupported {operation} field: {sorted(unknown)[0]}")
+        if not isinstance(payload.get("source_video_url"), str) or not payload["source_video_url"]:
+            raise ValueError(f"{operation} requires source_video_url")
+        if not isinstance(payload.get("prompt"), str) or not payload["prompt"].strip():
+            raise ValueError(f"{operation} requires a non-empty prompt")
+        if any(key in payload for key in ("start", "end", "segments", "cut")):
+            raise ValueError("interval AI retake is not whole-video edit or timeline cutting")
+        if operation == "video-extend":
+            duration = payload.get("duration", 5)
+            if isinstance(duration, bool) or not isinstance(duration, int) or not 4 <= duration <= 30:
+                raise ValueError("video-extend duration must be an integer from 4 to 30 seconds")
+        return
+
+    unknown = set(payload) - {"cut", "video_clips", "team_id", "callback_url"}
+    if unknown:
+        raise ValueError(f"unsupported video-timeline field: {sorted(unknown)[0]}")
+    cut = payload.get("cut")
+    clips = payload.get("video_clips", [])
+    if cut is not None:
+        if not isinstance(cut, dict) or clips:
+            raise ValueError("video-timeline cut must not be combined with clips")
+        unknown = set(cut) - {"source_video_url", "source_duration", "start", "end"}
+        if unknown:
+            raise ValueError(f"unsupported video-timeline cut field: {sorted(unknown)[0]}")
+        if not _timeline_media_url(cut.get("source_video_url")):
+            raise ValueError("video-timeline cut requires an https://assets.vicoo.ai source_video_url")
+        start, end, duration = cut.get("start"), cut.get("end"), cut.get("source_duration")
+        if not _finite_number(start) or not _finite_number(end):
+            raise ValueError("video-timeline cut boundaries must be finite numbers")
+        if duration is not None and (not _finite_number(duration) or duration <= 0):
+            raise ValueError("video-timeline source_duration must be a positive finite number")
+        if not (0 <= start < end) or (duration is not None and (end > duration or (start == 0 and end == duration))):
+            raise ValueError("video-timeline cut must leave some source video")
+    elif not isinstance(clips, list) or not clips:
+        raise ValueError("video-timeline requires cut or non-empty video_clips")
+    else:
+        for clip in clips:
+            if not isinstance(clip, dict) or not _timeline_media_url(clip.get("url")):
+                raise ValueError("video-timeline video clip requires an https://assets.vicoo.ai url")
+            unknown = set(clip) - {"url", "trim_start", "trim_end"}
+            if unknown:
+                raise ValueError(f"unsupported video clip field: {sorted(unknown)[0]}")
 
 
 def _decode_audio_result(value: Any, default_extension: str) -> Tuple[bytes, str]:
