@@ -192,12 +192,13 @@ Remove the background from an image using AI. Returns a `job_id` — use `job-st
 
 ```bash
 python3 scripts/artclaw.py remove-bg --image "base64_data"
+python3 scripts/artclaw.py remove-bg --image "@./portrait.png"
 ```
 
-| Parameter   | Description                         | Values        |
-| ----------- | ----------------------------------- | ------------- |
-| `--image`   | Base64-encoded image data, required | Base64 string |
-| `--team-id` | Team UUID for team billing          | Team UUID     |
+| Parameter   | Description                | Values                         |
+| ----------- | -------------------------- | ------------------------------ |
+| `--image`   | Image input, required      | Base64 string or `@local-file` |
+| `--team-id` | Team UUID for team billing | Team UUID                      |
 
 With team billing:
 
@@ -220,7 +221,7 @@ python3 scripts/artclaw.py generate-image \
   --no-wait
 ```
 
-With references (HTTPS URL, base64 data URI, or local file):
+With references (HTTPS URL, base64 data URI, or local file uploaded to Creator):
 
 ```bash
 # HTTPS URL
@@ -229,27 +230,27 @@ python3 scripts/artclaw.py generate-image \
   --reference-urls https://example.com/style_ref.jpg \
   --no-wait
 
-# Local file (auto-inlined as a base64 data URI)
+# Local file (uploaded first; generated task receives its CDN URL)
 python3 scripts/artclaw.py generate-image \
   --prompt "Landscape painting in the same style" \
   --reference-files ./style_ref.png \
   --no-wait
 ```
 
-| Parameter           | Description                                     | Values                                                                                                                                                                                                                                                                                                                            |
-| ------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--prompt`          | Image description, required                     | Text                                                                                                                                                                                                                                                                                                                              |
-| `--aspect-ratio`    | Aspect ratio                                    | Positive `W:H`, `auto` or `adaptive` (model-dependent)                                                                                                                                                                                                                                                                            |
-| `--resolution`      | Resolution                                      | `512`, `1K`, `2K`, `3K`, `4K` (model-dependent)                                                                                                                                                                                                                                                                                   |
-| `--reference-urls`  | Reference image URLs or base64 data URIs        | One or more values                                                                                                                                                                                                                                                                                                                |
-| `--reference-files` | Local reference files, auto-converted to base64 | One or more paths                                                                                                                                                                                                                                                                                                                 |
-| `--model`           | Model override                                  | `doubao-seedream-5-0-260128` (default), `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `Navo Bana 3.1 Flash Lite Image`, `Kling Image 3.0`, `Kling Image 3.0 Omni`, `GT-Image-2`, `GT-Image-2.5-Flash`, `GT-Image-2.5` |
-| `--quality`         | Image quality, model-dependent                  | `GT-Image-2.5` / `GT-Image-2.5-Flash`: `low`, `medium`, `high`, `xhigh`, `max` (default `high`); `GT-Image-2`: `auto`, `low`, `medium`, `high`                                                                                                                                                                                    |
-| `--background`      | Background mode (GT-Image family)               | `auto`, `opaque`, `transparent`; `transparent` needs an alpha-capable format (not `jpeg`)                                                                                                                                                                                                                                         |
-| `--output-format`   | Output file format                              | `png`, `jpeg`, `webp`                                                                                                                                                                                                                                                                                                             |
-| `--team-id`         | Team UUID for team billing                      | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb`                                                                                                                                                                                                                                                                            |
+| Parameter           | Description                                        | Values                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--prompt`          | Image description, required                        | Text                                                                                                                                                                                                                                                                                                                              |
+| `--aspect-ratio`    | Aspect ratio                                       | Positive `W:H`, `auto` or `adaptive` (model-dependent)                                                                                                                                                                                                                                                                            |
+| `--resolution`      | Resolution                                         | `512`, `1K`, `2K`, `3K`, `4K` (model-dependent)                                                                                                                                                                                                                                                                                   |
+| `--reference-urls`  | Reference image URLs or base64 data URIs           | One or more values                                                                                                                                                                                                                                                                                                                |
+| `--reference-files` | Local reference images, uploaded before generation | One or more paths                                                                                                                                                                                                                                                                                                                 |
+| `--model`           | Model override                                     | `doubao-seedream-5-0-260128` (default), `doubao-seedream-5-0-pro-260628`, `youchuan-v-7`, `youchuan-niji-7`, `Navo Bana 2.5 Flash Image`, `Navo Bana 3.0 Pro Image`, `Navo Bana 3.1 Flash Image`, `Navo Bana 3.1 Flash Lite Image`, `Kling Image 3.0`, `Kling Image 3.0 Omni`, `GT-Image-2`, `GT-Image-2.5-Flash`, `GT-Image-2.5` |
+| `--quality`         | Image quality, model-dependent                     | `GT-Image-2.5` / `GT-Image-2.5-Flash`: `low`, `medium`, `high`, `xhigh`, `max` (default `high`); `GT-Image-2`: `auto`, `low`, `medium`, `high`                                                                                                                                                                                    |
+| `--background`      | Background mode (GT-Image family)                  | `auto`, `opaque`, `transparent`; `transparent` needs an alpha-capable format (not `jpeg`)                                                                                                                                                                                                                                         |
+| `--output-format`   | Output file format                                 | `png`, `jpeg`, `webp`                                                                                                                                                                                                                                                                                                             |
+| `--team-id`         | Team UUID for team billing                         | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb`                                                                                                                                                                                                                                                                            |
 
-**Reference images.** `--reference-files` accepts local files and inlines them as `data:<mime>;base64,...`; `--reference-urls` accepts HTTPS URLs or base64 data URIs. Keep each reference image under ~10 MB to avoid timeouts.
+**Reference images.** `--reference-files` and `--reference-urls @./image.png` upload local images through Creator's authenticated media-upload entry point and use the returned CDN URLs. `--reference-urls` also accepts existing HTTPS URLs or image base64 data URIs. Local images must be JPG/JPEG/PNG/WebP/GIF/BMP and at most 30 MB.
 
 **GT-Image-2.5 models.** Use the exact public names `GT-Image-2.5-Flash` for speed or `GT-Image-2.5` for editing precision in both CLI and REST requests. Both support text-to-image, reference images, and 1K / 2K / 4K resolution. Omitted or empty quality defaults to `high`; `auto` and unknown tiers are rejected for these two models before a generation job is submitted. Pass the chosen `low` / `medium` / `high` / `xhigh` / `max` value unchanged. Add `--background transparent` for a transparent background (PNG output keeps the alpha channel; `jpeg` is rejected).
 
@@ -288,7 +289,7 @@ python3 scripts/artclaw.py generate-video \
   --no-wait
 ```
 
-Image-to-video (HTTPS URL, base64 data URI, or local file):
+Image-to-video (HTTPS URL, base64 data URI, or local file uploaded to Creator):
 
 ```bash
 # HTTPS URL
@@ -297,7 +298,7 @@ python3 scripts/artclaw.py generate-video \
   --reference-urls https://example.com/portrait.jpg \
   --no-wait
 
-# Local file (auto-inlined as a base64 data URI)
+# Local file (uploaded first; generated task receives its CDN URL)
 python3 scripts/artclaw.py generate-video \
   --prompt "Make the person in the frame turn their head and smile" \
   --reference-files ./portrait.png \
@@ -311,19 +312,21 @@ python3 scripts/artclaw.py generate-video \
 | `--duration`          | Duration in seconds                         | Model-dependent; Seedance 2.0: `4` - `15`, Seedance 2.5: `4` - `30`                                                                                                                                                                                                                   |
 | `--resolution`        | Resolution                                  | `480p`, `720p`, `1080p`, `4k` (model-dependent)                                                                                                                                                                                                                                       |
 | `--reference-urls`    | Reference image URLs or base64 data URIs    | One or more values                                                                                                                                                                                                                                                                    |
-| `--reference-files`   | Local reference image files, auto-converted | One or more paths                                                                                                                                                                                                                                                                     |
+| `--reference-files`   | Local reference image files, uploaded first | One or more paths                                                                                                                                                                                                                                                                     |
 | `--model`             | Model override                              | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `doubao-seedance-2-0-mini-260615`, `doubao-seedance-2-5-260628`, `doubao-seedance-1-5-pro-251215`, `kling-v3-omni`, `viduq3-pro`, `happyhorse-1.0`, `happyhorse-1.1`, `Vo 3.1`, `Vo 3.1 Fast`, `Grk Video` |
 | `--output-format`     | Output container; Seedance 2.5 only         | `mp4` (default), `mov`                                                                                                                                                                                                                                                                |
 | `--no-generate-audio` | Disable generated audio/BGM                 | Flag (default off; video audio/BGM is on by default)                                                                                                                                                                                                                                  |
 | `--team-id`           | Team UUID for team billing                  | Team UUID, e.g. `8f8bacf4-e130-4221-8bab-58cf14c755fb`                                                                                                                                                                                                                                |
 
-**Reference images (I2V).** `--reference-files` accepts local files and inlines them as `data:<mime>;base64,...`; `--reference-urls` accepts HTTPS URLs or base64 data URIs. Keep each reference image under ~10 MB to avoid timeouts.
+**Reference images (I2V).** `--reference-files` uploads local images and places their CDN URLs in `reference_image` items. `--reference-urls` accepts HTTPS URLs or image base64 data URIs. For local video/audio references, use typed `--content-items` with `reference_video` or `reference_audio` and `@path`.
 
 `generate-seedance-video` accepts the same `--output-format mp4|mov` option. Explicit output format selection requires `--model doubao-seedance-2-5-260628`; MP4 remains the default when the option is omitted.
 
 Typed first/last frames and video/audio references use `--content-items`; generic video also supports `--seed`, search and Seedance 2.5 task types. See [Video references and editing](references/direct-generation.md#video-references).
 
-For an existing video, route by intent: regenerate one selected interval → `video-edit` with `source_video_url`, `start`, `end`, and `prompt`; generate additional seconds after it → `video-extend`; cut, reorder or concatenate clips → `video-timeline`. Retake and timeline media must be platform-hosted at `https://assets.vicoo.ai`; external audio tracks are not supported by the timeline command. A timeline cut probes the source duration automatically, so do not ask the user to supply `source_duration`. These are separate billable operations. `video-edit` reuses Creator's deployed segment-retake chain and supports exactly one 4–30 second interval. If a user says only “edit 12–14 seconds”, ask whether to **cut** that interval or **regenerate its visual content** before submitting. For a 12–14 second retake request, explain the 4-second minimum and ask the user to choose a new range; never silently widen it or substitute timeline cutting. A 12–14 second _cut_ is valid. See [direct video editing examples](references/direct-generation.md#direct-video-editing-extension-and-timeline).
+For a local reference video, use `--content-items '[{"role":"reference_video","url":"@/path/to/clip.mp4"}]'`. The CLI uploads it to Creator before submitting the video task, then passes the returned `https://assets.vicoo.ai/...` URL under the same role. The same `@path` syntax supports `reference_image` and `reference_audio`; local MP4/MOV, supported images and MP3/WAV/M4A/OGG/AAC/FLAC are accepted. Do not put a video file in `--reference-files`: that legacy flag is image-only. Invalid files or failed uploads stop before generation. A dry run never uploads; spawn mode uploads in the child process, which must be able to read the same local path.
+
+For an existing video, route by intent: regenerate one selected interval → `video-edit` with `source_video_url`, `start`, `end`, and `prompt`; generate additional seconds after it → `video-extend`; cut, reorder or concatenate clips → `video-timeline`. In structured `--input` JSON, `source_video_url`, reference image/video/audio URL arrays and timeline clip `url` accept `@local-file`; the CLI uploads each file before task submission. Retake and timeline media are platform-hosted at `https://assets.vicoo.ai` by the time they reach REST. External audio tracks are not supported by the timeline command. A timeline cut probes the source duration automatically, so do not ask the user to supply `source_duration`. These are separate billable operations. `video-edit` reuses Creator's deployed segment-retake chain and supports exactly one 4–30 second interval. If a user says only “edit 12–14 seconds”, ask whether to **cut** that interval or **regenerate its visual content** before submitting. For a 12–14 second retake request, explain the 4-second minimum and ask the user to choose a new range; never silently widen it or substitute timeline cutting. A 12–14 second _cut_ is valid. See [direct video editing examples](references/direct-generation.md#direct-video-editing-extension-and-timeline).
 
 ### Generate Audio
 
@@ -371,10 +374,10 @@ python3 scripts/artclaw.py generate-text \
   --response-format json_object
 ```
 
-Multimodal analysis (image / video / audio → text) requires a **Gemi** model. Use `--reference-parts` with `type=url` (public HTTPS URL or `data:` URI) or `type=@file` (a local file, inlined as a base64 data URI):
+Multimodal analysis (image / video / audio → text) requires a **Gemi** model. Use `--reference-parts` with `type=url` (public HTTPS URL or matching `data:` URI) or `type=@file` (uploaded to Creator before text generation):
 
 ```bash
-# Analyze a local video (inlined as base64 data URI)
+# Analyze a local video (uploaded first; task receives its CDN URL)
 python3 scripts/artclaw.py generate-text \
   --prompt "Describe what happens in this video" \
   --model "Gemi 3.0 Flash" \
@@ -396,7 +399,7 @@ python3 scripts/artclaw.py generate-text \
 | `--response-format`    | Output format                           | `text` (default), `json_object`                                                                                                       |
 | `--reference-parts`    | Multimodal reference (Gemi models only) | One or more `type=url` / `type=@file`, e.g. `video=@./clip.mp4`, `image=https://...`                                                  |
 
-**Base64 / size limit for `--reference-parts`.** Media is sent inline as `data:<mime>;base64,...`. The genai backend inlines media up to **10 MB of decoded bytes**; larger files are auto-uploaded to GCS instead, which requires a Vertex + FileBucket config and fails otherwise. So keep reference media under 10 MB — for video, transcode down first (e.g. 480p) if needed. `--reference-parts` with a non-Gemi model errors out client-side.
+**Local references for `--reference-parts`.** `type=@file` uploads the local image, video or audio, then sends its CDN URL in the same typed slot. Existing HTTPS URLs and `data:<mime>;base64,...` inputs remain supported. Local upload limits are 30 MB for images and 50 MB for video/audio; a model may impose tighter limits. `--reference-parts` with a non-Gemi model errors out client-side.
 
 ### Voice STT / TTS (Async)
 
@@ -414,14 +417,16 @@ python3 scripts/artclaw.py tts --text "你好" --speaker zh_female_shuangkuaishu
 
 | Parameter      | Description                            | Values                                                                       |
 | -------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
-| `--audio`      | Base64 audio data (STT)                | `data:audio/wav;base64,...` or raw base64                                    |
-| `--audio-file` | Local audio file, auto-converted (STT) | Path                                                                         |
+| `--audio`      | Audio input (STT)                      | Public URL, `@local-file`, `data:audio/wav;base64,...` or raw base64         |
+| `--audio-file` | Local audio file, uploaded first (STT) | Path                                                                         |
 | `--text`       | Text to synthesize (TTS), required     | Text                                                                         |
 | `--speaker`    | Speaker ID (TTS)                       | `en_male_tim_uranus_bigtts` (default), `zh_female_shuangkuaishu_moon_bigtts` |
 
 Voice jobs use polling profile: interval 3s, timeout 120s.
 
 ### Execute Workflow
+
+If `--inputs` contains an explicit `@path` to a supported local image, video or audio file (including inside a nested reference list), the CLI uploads it before workflow execution and substitutes the CDN URL. Other input values are unchanged. In spawn mode the child process must have access to the same local path; dry-run does not upload. The same rule applies to `run-workflow-dsl` inputs; DSL source files themselves are read as configuration, not uploaded.
 
 ```bash
 python3 scripts/artclaw.py list-workflows
@@ -522,4 +527,4 @@ python3 scripts/artclaw.py self-update --dry-run
 
 Downloads `https://github.com/ArtClaw1/artclaw-skill/archive/refs/heads/main.zip`, atomically applies added or modified files, and reports a JSON summary. Does not delete local-only files.
 
-After updating, reload this Skill in your agent or start a new session that reads the updated instructions. Version 1.5.0 adds direct model, voice and postprocessing controls; the matching REST deployment is required.
+After updating, reload this Skill in your agent or start a new session that reads the updated instructions. Version 1.7.0 adds upload-first local image, video and audio inputs across generation commands; the matching REST deployment is required.

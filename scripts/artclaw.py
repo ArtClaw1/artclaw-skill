@@ -158,25 +158,18 @@ def _video_content_items(args, *, for_spawn: bool = False):
                      "reference_audio": "audio"}.get(role) if isinstance(role, str) else None
             if not media or not isinstance(url, str) or not url:
                 raise ValueError("Each content item needs a valid media role and non-empty url")
-            if args.command == "generate-video" and media != "image" and not url.startswith(ALLOWED_URL_SCHEMES):
-                raise ValueError(
-                    "generate-video requires HTTP(S) URLs for video/audio references; "
-                    "its REST route cannot resolve inline video/audio"
-                )
-            if media == "video" and not url.startswith(ALLOWED_URL_SCHEMES):
-                raise ValueError("Video references require HTTP(S) URLs")
-            local_path = None
             if url.startswith("@"):
-                local_path = Path(url[1:]).resolve()
-                if local_path.stat().st_size > MAX_REFERENCE_BYTES:
-                    raise ValueError("Reference media exceeds the 10 MB inline limit; use a hosted URL")
-                url = _file_to_data_uri(str(local_path))
+                url = "@" + str(_local_media_path(url[1:], media))
+            elif args.command == "generate-video" and media != "image" and not url.startswith(ALLOWED_URL_SCHEMES):
+                raise ValueError("generate-video requires HTTP(S) or @local-file video/audio references")
+            elif media == "video" and not url.startswith(ALLOWED_URL_SCHEMES):
+                raise ValueError("Video references require HTTP(S) or @local-file URLs")
             if url.startswith("data:"):
                 if not url.startswith(f"data:{media}/") or ";base64," not in url:
                     raise ValueError(f"{role} requires a {media} base64 data URI")
-            elif not url.startswith(ALLOWED_URL_SCHEMES):
+            elif not url.startswith(ALLOWED_URL_SCHEMES) and not url.startswith("@"):
                 raise ValueError("Reference URL must use http(s), a data URI or @local-file")
-            result.append({"role": role, "url": f"@{local_path}" if for_spawn and local_path else url})
+            result.append({"role": role, "url": url})
         return result
     except (ValueError, OSError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
@@ -230,12 +223,20 @@ VALID_TEXT_MODELS = frozenset({
     "GT-5.5",
 })
 
-# reference_parts[].url is sent inline as `data:<mime>;base64,...`. The genai
-# service (GeMiniProvider.mediaToPart) inlines media up to 10 MB of *decoded*
-# bytes; anything larger is auto-uploaded to GCS, which requires a Vertex +
-# FileBucket config and fails otherwise. Keep media under 10 MB.
 REFERENCE_PART_TYPES = ("image", "video", "audio")
-MAX_REFERENCE_BYTES = 10 * 1024 * 1024  # 10 MB decoded media
+LOCAL_MEDIA_TYPES = {
+    "image": {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
+    },
+    "video": {".mp4": "video/mp4", ".mov": "video/quicktime"},
+    "audio": {
+        ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg", ".aac": "audio/aac", ".flac": "audio/flac",
+    },
+}
+LOCAL_MEDIA_LIMITS = {"image": 30 * 1024 * 1024, "video": 50 * 1024 * 1024,
+                      "audio": 50 * 1024 * 1024}
 
 # Display name → real model ID (mirrors vicoo-mcp-server model_policy._NAME_TO_MODEL).
 # Used only to tell whether a text model is Gemini-backed (for reference_parts gating).
@@ -295,6 +296,16 @@ class ArtClawApiError(Exception):
         return d
 
 
+class ArtClawUploadError(ArtClawApiError):
+    """An upload failed before any generation request was submitted."""
+
+    def __init__(self, message: str, *, status_code: int = 0,
+                 detail: Any = None, retryable: bool = False):
+        super().__init__(message, status_code=status_code,
+                         code="upload_failed", detail=detail)
+        self.retryable = retryable
+
+
 class ArtClawPollTimeout(Exception):
     """Raised when polling exceeds the timeout for a job type."""
 
@@ -325,69 +336,184 @@ class ArtClawPollFailed(Exception):
 # Section 3: Config / Credential Loading
 # ---------------------------------------------------------------------------
 
-def _file_to_base64(file_path: str) -> str:
-    """Convert local image file to base64 data URI."""
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Reference file not found: {file_path}")
-
-    # Determine MIME type from extension
-    ext = path.suffix.lower()
-    mime_map = {
-        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".png": "image/png", ".gif": "image/gif",
-        ".webp": "image/webp", ".bmp": "image/bmp"
-    }
-    mime_type = mime_map.get(ext, "image/jpeg")
-
-    # Read and encode
-    with open(path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("ascii")
-
-    return f"data:{mime_type};base64,{encoded}"
+def _local_media_path(value: str, media_type: str) -> Path:
+    """Validate a local reference before any upload or paid task submission."""
+    path = Path(value).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError(f"Local {media_type} file not found: {value}")
+    if path.suffix.lower() not in LOCAL_MEDIA_TYPES[media_type]:
+        raise ValueError(f"Local file extension does not match {media_type} reference: {value}")
+    size = path.stat().st_size
+    if size == 0 or size > LOCAL_MEDIA_LIMITS[media_type]:
+        raise ValueError(f"Local {media_type} file must be 1 to {LOCAL_MEDIA_LIMITS[media_type]} bytes")
+    return path
 
 
-def _file_to_data_uri(file_path: str, mime_type: str = "") -> str:
-    """Convert a local media file to a base64 data URI (image/video/audio).
-
-    `mime_type` is inferred from the file extension unless explicitly given
-    (e.g. video files whose extension is non-standard).
-    """
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Reference file not found: {file_path}")
-
-    if not mime_type:
-        ext = path.suffix.lower()
-        mime_type = {
-            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-            ".png": "image/png", ".gif": "image/gif",
-            ".webp": "image/webp", ".bmp": "image/bmp",
-            ".mp4": "video/mp4", ".mov": "video/quicktime",
-            ".webm": "video/webm", ".m4v": "video/x-m4v",
-            ".mp3": "audio/mpeg", ".wav": "audio/wav",
-            ".m4a": "audio/mp4", ".ogg": "audio/ogg",
-        }.get(ext, "application/octet-stream")
-
-    with open(path, "rb") as f:
-        raw = f.read()
-    if len(raw) > MAX_REFERENCE_BYTES:
-        raise ValueError(
-            f"Reference media too large: {len(raw)} bytes exceeds "
-            f"the {MAX_REFERENCE_BYTES // (1024 * 1024)} MB inline limit "
-            f"(decode to base64 inline; larger files are auto-uploaded to GCS "
-            f"and require a Vertex + FileBucket backend config)."
+def _upload_local_media(config: dict, path: Path, media_type: str,
+                        cache: Dict[Tuple[str, str], str]) -> str:
+    key = (str(path), media_type)
+    if key in cache:
+        return cache[key]
+    content_type = LOCAL_MEDIA_TYPES[media_type][path.suffix.lower()]
+    _log(f"Uploading local {media_type} reference: {path.name}")
+    try:
+        with path.open("rb") as file:
+            response = requests.post(
+                f"{config['baseUrl'].rstrip('/')}/assets/upload",
+                params={"filename": path.name, "type": media_type},
+                headers={"X-API-KEY": config["apiKey"], "Content-Type": content_type},
+                data=file, timeout=(CONNECT_TIMEOUT, 300),
+            )
+    except requests.RequestException as exc:
+        raise ArtClawUploadError(f"Local media upload failed: {exc}", retryable=True) from exc
+    except OSError as exc:
+        raise ArtClawUploadError(f"Cannot read local media: {exc}") from exc
+    if response.status_code != 200:
+        try:
+            error = _parse_error_response(response)
+        except (AttributeError, TypeError):
+            error = ArtClawApiError(f"HTTP {response.status_code}",
+                                    status_code=response.status_code)
+        raise ArtClawUploadError(
+            str(error), status_code=error.status_code, detail=error.detail,
+            retryable=error.status_code == 429 or error.status_code >= 500,
         )
-    encoded = base64.b64encode(raw).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
+    try:
+        url = response.json()["url"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ArtClawUploadError("Local media upload returned no URL") from exc
+    if not _timeline_media_url(url):
+        raise ArtClawUploadError("Local media upload returned an untrusted URL")
+    cache[key] = url
+    return url
 
 
-def _build_reference_parts(specs: List[str]) -> List[Dict[str, str]]:
+def _prepare_media_value(value: Any, media_type: str, config: dict, *,
+                         dry_run: bool, cache: Dict[Tuple[str, str], str]) -> Any:
+    if not isinstance(value, str) or not value.startswith("@"):
+        return value
+    path = _local_media_path(value[1:], media_type)
+    return f"@{path}" if dry_run else _upload_local_media(config, path, media_type, cache)
+
+
+def _prepare_content_items(items: List[dict], config: dict, *, dry_run: bool) -> List[dict]:
+    cache: Dict[Tuple[str, str], str] = {}
+    roles = {"first_frame": "image", "last_frame": "image",
+             "reference_image": "image", "reference_video": "video",
+             "reference_audio": "audio"}
+    return [{"role": item["role"], "url": _prepare_media_value(
+        item["url"], roles[item["role"]], config, dry_run=dry_run, cache=cache,
+    )} for item in items]
+
+
+def _prepare_reference_urls(urls: List[str], files: List[str], media_type: str,
+                            config: dict, *, dry_run: bool) -> List[str]:
+    """Resolve URL and file flags through one upload cache, in queue order."""
+    references = list(urls) + [f"@{file}" for file in files]
+    for value in references:
+        if value.startswith("@"):
+            _local_media_path(value[1:], media_type)
+        else:
+            _validate_url(value)
+    cache: Dict[Tuple[str, str], str] = {}
+    return [_prepare_media_value(value, media_type, config, dry_run=dry_run, cache=cache)
+            for value in references]
+
+
+def _prepare_workflow_inputs(value: Any, config: dict, *, dry_run: bool,
+                             cache: Dict[Tuple[str, str], str]) -> Any:
+    """Resolve explicit @media paths in arbitrary workflow input structures."""
+    if isinstance(value, dict):
+        return {key: _prepare_workflow_inputs(item, config, dry_run=dry_run, cache=cache)
+                for key, item in value.items()}
+    if isinstance(value, list):
+        return [_prepare_workflow_inputs(item, config, dry_run=dry_run, cache=cache)
+                for item in value]
+    if isinstance(value, str) and value.startswith("@"):
+        candidate = value[1:]
+        extension = Path(candidate).suffix.lower()
+        media_type = next((kind for kind, types in LOCAL_MEDIA_TYPES.items()
+                           if extension in types), None)
+        if not media_type:
+            # Workflow inputs can also contain text such as @username or
+            # @alice 请点评. Only path-shaped values are explicit local files.
+            looks_like_path = (candidate.startswith((".", "~")) or
+                               "/" in candidate or "\\" in candidate or
+                               Path(candidate).is_file())
+            if looks_like_path:
+                raise ValueError(f"unsupported local media extension in workflow input: {value}")
+            return value
+        return _prepare_media_value(value, media_type, config,
+                                    dry_run=dry_run, cache=cache)
+    return value
+
+
+DIRECT_MEDIA_FIELDS = {
+    "generate-audio": {"reference_audio_urls": "audio", "video_url": "video"},
+    "voice-convert": {"audio_url": "audio"},
+    "stem-separate": {"audio_url": "audio"},
+    "remove-bg-image": {"image_url": "image", "image_urls": "image"},
+    "remove-bg-video": {"video_url": "video"},
+    "voice-clone": {"reference_audio_urls": "audio", "emo_audio_url": "audio"},
+    "video-retalk": {"video_url": "video", "audio_url": "audio", "ref_image_url": "image"},
+    "image-enhance": {"image_url": "image"},
+    "smart-erase": {"video_url": "video"},
+    "smart-subtitles": {"video_url": "video"},
+    "ai-dubbing": {"video_url": "video"},
+    "video-enhance": {"video_url": "video"},
+    "video-edit": {"source_video_url": "video"},
+    "video-extend": {
+        "source_video_url": "video", "reference_image_urls": "image",
+        "reference_video_urls": "video", "reference_audio_urls": "audio",
+    },
+}
+
+
+def _prepare_direct_media(operation: str, payload: dict, config: dict, *,
+                          dry_run: bool) -> dict:
+    """Resolve only known media fields; preserve all unrelated user input."""
+    result = dict(payload)
+    cache: Dict[Tuple[str, str], str] = {}
+    for field, media_type in DIRECT_MEDIA_FIELDS.get(operation, {}).items():
+        if field not in result:
+            continue
+        value = result[field]
+        if field.endswith("_urls"):
+            if not isinstance(value, list):
+                raise ValueError(f"{field} must be a list")
+            if any(not isinstance(item, str) or not item for item in value):
+                raise ValueError(f"{field} entries must be non-empty URLs or @local-files")
+            result[field] = [_prepare_media_value(item, media_type, config,
+                             dry_run=dry_run, cache=cache) for item in value]
+        else:
+            if not isinstance(value, str):
+                raise ValueError(f"{field} must be a URL or @local-file")
+            result[field] = _prepare_media_value(value, media_type, config,
+                                                 dry_run=dry_run, cache=cache)
+    if operation == "video-timeline":
+        if isinstance(result.get("cut"), dict):
+            cut = dict(result["cut"])
+            cut["source_video_url"] = _prepare_media_value(
+                cut.get("source_video_url"), "video", config, dry_run=dry_run, cache=cache,
+            )
+            result["cut"] = cut
+        if isinstance(result.get("video_clips"), list):
+            result["video_clips"] = [
+                {**clip, "url": _prepare_media_value(
+                    clip.get("url"), "video", config, dry_run=dry_run, cache=cache,
+                )} if isinstance(clip, dict) else clip
+                for clip in result["video_clips"]
+            ]
+    return result
+
+
+def _build_reference_parts(specs: List[str], config: dict, *,
+                           dry_run: bool) -> List[Dict[str, str]]:
     """Turn `--reference-parts` args into the API's [{type, url}] list.
 
     Each spec is one of:
       - `type=url`        → pass the URL through (https:// or data: URI)
-      - `type=@filepath`  → read a local file and inline it as a data URI
+      - `type=@filepath`  → upload a local file and use its CDN URL
     `type` must be image / video / audio.
     """
     parts: List[Dict[str, str]] = []
@@ -408,10 +534,15 @@ def _build_reference_parts(specs: List[str]) -> List[Dict[str, str]]:
             raise ValueError(f"Empty reference value for type {ref_type!r}")
 
         if ref_value.startswith("@"):
-            file_path = ref_value[1:]
-            ref_value = _file_to_data_uri(file_path)
+            ref_value = "@" + str(_local_media_path(ref_value[1:], ref_type))
+        elif not (ref_value.startswith("https://") or
+                  ref_value.startswith(f"data:{ref_type}/")):
+            raise ValueError(f"{ref_type} reference must use HTTPS, a matching data URI or @local-file")
         parts.append({"type": ref_type, "url": ref_value})
-    return parts
+    cache: Dict[Tuple[str, str], str] = {}
+    return [{"type": part["type"], "url": _prepare_media_value(
+        part["url"], part["type"], config, dry_run=dry_run, cache=cache,
+    )} for part in parts]
 
 
 def _ensure_dir():
@@ -1284,6 +1415,8 @@ def build_spawn_task(
         elif isinstance(value, list):
             cmd_parts.append(flag)
             cmd_parts.extend(str(v) for v in value)
+        elif isinstance(value, dict):
+            cmd_parts.extend([flag, json.dumps(value, ensure_ascii=False)])
         else:
             cmd_parts.extend([flag, str(value)])
 
@@ -1381,9 +1514,12 @@ def cmd_generate_image(args, config: dict):
     if _should_spawn(args):
         # Pass reference URLs/files as-is to spawn task
         if args.reference_urls:
-            api_kwargs["reference_urls"] = args.reference_urls
+            api_kwargs["reference_urls"] = _prepare_reference_urls(
+                args.reference_urls, [], "image", config, dry_run=True,
+            )
         if getattr(args, "reference_files", None):
-            api_kwargs["reference_files"] = [str(Path(p).resolve()) for p in args.reference_files]
+            api_kwargs["reference_files"] = [str(_local_media_path(p, "image"))
+                                              for p in args.reference_files]
 
         result = build_spawn_task(
             "generate-image", api_kwargs,
@@ -1393,18 +1529,16 @@ def cmd_generate_image(args, config: dict):
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
 
-    # Non-spawn mode: convert reference_files to base64 now
-    reference_urls = list(args.reference_urls) if args.reference_urls else []
-    if getattr(args, "reference_files", None):
-        for file_path in args.reference_files:
-            _log(f"Converting local file to base64: {file_path}")
-            base64_uri = _file_to_base64(file_path)
-            reference_urls.append(base64_uri)
+    # Upload local image references before submitting the generation job.
+    references = list(args.reference_urls or [])
+    files = list(getattr(args, "reference_files", None) or [])
+    _prepare_reference_urls(references, files, "image", config, dry_run=True)
+    reference_urls = _prepare_reference_urls(
+        references, files, "image", config, dry_run=dry_run,
+    )
 
     if reference_urls:
         api_kwargs["reference_urls"] = reference_urls
-        for url in reference_urls:
-            _validate_url(url)
 
     result = submit_and_poll(
         config, "generate-image", api_generate_image, api_kwargs,
@@ -1436,9 +1570,12 @@ def cmd_generate_video(args, config: dict):
     if spawn:
         # Pass reference URLs/files as-is to spawn task
         if args.reference_urls:
-            api_kwargs["reference_urls"] = args.reference_urls
+            api_kwargs["reference_urls"] = _prepare_reference_urls(
+                args.reference_urls, [], "image", config, dry_run=True,
+            )
         if getattr(args, "reference_files", None):
-            api_kwargs["reference_files"] = [str(Path(p).resolve()) for p in args.reference_files]
+            api_kwargs["reference_files"] = [str(_local_media_path(p, "image"))
+                                              for p in args.reference_files]
         if args.no_generate_audio:
             api_kwargs["no_generate_audio"] = True
 
@@ -1452,18 +1589,21 @@ def cmd_generate_video(args, config: dict):
 
     api_kwargs["generate_audio"] = not args.no_generate_audio
 
-    # Non-spawn mode: convert reference_files to base64 now
-    reference_urls = list(args.reference_urls) if args.reference_urls else []
-    if getattr(args, "reference_files", None):
-        for file_path in args.reference_files:
-            _log(f"Converting local file to base64: {file_path}")
-            base64_uri = _file_to_base64(file_path)
-            reference_urls.append(base64_uri)
+    if content_items is not None:
+        api_kwargs["content_items"] = _prepare_content_items(
+            content_items, config, dry_run=dry_run,
+        )
+
+    # Legacy --reference-files remains image-only.
+    references = list(args.reference_urls or [])
+    files = list(getattr(args, "reference_files", None) or [])
+    _prepare_reference_urls(references, files, "image", config, dry_run=True)
+    reference_urls = _prepare_reference_urls(
+        references, files, "image", config, dry_run=dry_run,
+    )
 
     if reference_urls:
         api_kwargs["reference_urls"] = reference_urls
-        for url in reference_urls:
-            _validate_url(url)
 
     result = submit_and_poll(
         config, "generate-video", api_generate_video, api_kwargs,
@@ -1494,6 +1634,30 @@ def cmd_generate_audio(args, config: dict):
         api_kwargs["custom_mode"] = True
     if getattr(args, "asmr_mode", None):
         api_kwargs["asmr_mode"] = True
+
+    # Match REST's provider/input shape before uploading any local media.
+    references = api_kwargs.get("reference_audio_urls") or []
+    provider = api_kwargs["provider"]
+    operation = api_kwargs.get("operation") or "generate"
+    if provider == "suno":
+        if api_kwargs.get("video_url") or api_kwargs.get("video_id"):
+            raise ValueError("Suno does not accept Kling video input")
+        expected = {"generate": 0, "upload_cover": 1, "mashup": 2}.get(operation)
+        if expected is None:
+            raise ValueError("unsupported Suno operation")
+        if len(references) != expected:
+            raise ValueError(f"{operation} requires {expected} reference audio URLs")
+    elif provider == "kling":
+        if operation != "generate" or references:
+            raise ValueError("Kling does not accept Suno reference music")
+        if bool(api_kwargs.get("video_url")) == bool(api_kwargs.get("video_id")):
+            raise ValueError("Kling requires exactly one video_url or video_id")
+    else:
+        raise ValueError("unsupported audio provider")
+
+    api_kwargs = _prepare_direct_media("generate-audio", api_kwargs, config, dry_run=True)
+    if not _should_spawn(args) and not dry_run:
+        api_kwargs = _prepare_direct_media("generate-audio", api_kwargs, config, dry_run=False)
 
     if _should_spawn(args):
         result = build_spawn_task(
@@ -1541,7 +1705,13 @@ def cmd_generate_text(args, config: dict):
             }), file=sys.stderr)
             sys.exit(1)
         try:
-            reference_parts = _build_reference_parts(args.reference_parts)
+            reference_parts = _build_reference_parts(
+                args.reference_parts, config, dry_run=True,
+            )
+            if not getattr(args, "dry_run", False):
+                reference_parts = _build_reference_parts(
+                    args.reference_parts, config, dry_run=False,
+                )
         except (ValueError, FileNotFoundError) as e:
             print(json.dumps({"error": str(e)}), file=sys.stderr)
             sys.exit(1)
@@ -1567,12 +1737,14 @@ def cmd_generate_seedance_video(args, config: dict):
         "callback_url", "output_format",
         "online_search", "watermark",
     ]))
-    content_items = _video_content_items(args)
-    if content_items is not None:
-        api_kwargs["content_items"] = content_items
     _validate_video_output_format_model(
         api_kwargs.get("model"), api_kwargs.get("output_format"),
     )
+    content_items = _video_content_items(args)
+    if content_items is not None:
+        api_kwargs["content_items"] = _prepare_content_items(
+            content_items, config, dry_run=dry_run,
+        )
     # 默认生成音频，--no-generate-audio 禁用
     api_kwargs["generate_audio"] = not args.no_generate_audio
     if getattr(args, "return_last_frame", None):
@@ -1601,14 +1773,19 @@ def _cmd_voice_async(args, config: dict, subcommand: str, api_fn, api_kwargs: di
 
 def cmd_stt(args, config: dict):
     """Speech-to-text (async). Submit audio → poll for text."""
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
     api_kwargs: Dict[str, Any] = {}
     if getattr(args, "audio_file", None):
-        api_kwargs["audio"] = _file_to_base64(args.audio_file)
+        source = f"@{args.audio_file}"
     elif getattr(args, "audio", None):
-        api_kwargs["audio"] = args.audio
+        source = args.audio
     else:
         print(json.dumps({"error": "Either --audio or --audio-file is required"}), file=sys.stderr)
         sys.exit(1)
+    if source.startswith("@"):
+        source = _prepare_media_value(source, "audio", config, dry_run=dry_run, cache={})
+    api_kwargs["audio"] = source
     if getattr(args, "callback_url", None):
         api_kwargs["callback_url"] = args.callback_url
     _cmd_voice_async(args, config, "stt", api_voice_stt, api_kwargs)
@@ -1647,6 +1824,9 @@ def cmd_run_workflow(args, config: dict):
             "hint": 'Example: --inputs \'{"prompt": "a cat"}\'',
         }), file=sys.stderr)
         sys.exit(1)
+    if not isinstance(inputs, dict):
+        raise ValueError("--inputs must be a JSON object")
+    inputs = _prepare_workflow_inputs(inputs, config, dry_run=True, cache={})
 
     api_kwargs: Dict[str, Any] = {
         "workflow_id": args.workflow_id,
@@ -1663,6 +1843,10 @@ def cmd_run_workflow(args, config: dict):
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
 
+    if not dry_run:
+        api_kwargs["inputs"] = _prepare_workflow_inputs(
+            inputs, config, dry_run=False, cache={},
+        )
     result = submit_and_poll(
         config, "run-workflow", api_run_workflow, api_kwargs,
         no_wait=args.no_wait, dry_run=dry_run,
@@ -1683,6 +1867,9 @@ def cmd_run_workflow_dsl(args, config: dict):
             "hint": 'Example: --inputs \'{"prompt": "a cat"}\'',
         }), file=sys.stderr)
         sys.exit(1)
+    if not isinstance(inputs, dict):
+        raise ValueError("--inputs must be a JSON object")
+    inputs = _prepare_workflow_inputs(inputs, config, dry_run=True, cache={})
 
     if args.dsl and args.dsl_file:
         print(json.dumps({
@@ -1718,6 +1905,10 @@ def cmd_run_workflow_dsl(args, config: dict):
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
 
+    if not dry_run:
+        api_kwargs["inputs"] = _prepare_workflow_inputs(
+            inputs, config, dry_run=False, cache={},
+        )
     result = submit_and_poll(
         config, "run-workflow-dsl", api_run_workflow_from_dsl, api_kwargs,
         no_wait=args.no_wait, dry_run=dry_run,
@@ -1767,8 +1958,20 @@ def cmd_remove_bg(args, config: dict):
     """Remove background from an image."""
     _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
     if not args.image:
-        print(json.dumps({"error": "Must provide --image (base64)"}), file=sys.stderr)
+        print(json.dumps({"error": "Must provide --image (base64 or @local-file)"}), file=sys.stderr)
         sys.exit(1)
+    if args.image.startswith("@"):
+        dry_run = getattr(args, "dry_run", False)
+        image_url = _prepare_media_value(args.image, "image", config,
+                                         dry_run=dry_run, cache={})
+        payload = {"image_url": image_url}
+        team_id = _resolve_team_id(args, config)
+        if team_id:
+            payload["team_id"] = team_id
+        result = api_direct_operation(config, "remove-bg-image", payload,
+                                      dry_run=dry_run)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
     result = api_remove_bg(config, args.image,
                            team_id=_resolve_team_id(args, config),
                            dry_run=getattr(args, "dry_run", False))
@@ -1788,40 +1991,63 @@ def cmd_direct_operation(args, config: dict):
         raise ValueError(f"invalid --input JSON: {exc}") from exc
     if not isinstance(payload, dict):
         raise ValueError("--input must be a JSON object")
+    original_payload = dict(payload)
     operation = args.command
+    if operation in SYNC_DIRECT_OPERATIONS:
+        audio = payload.get("audio_base64")
+        audio_url = payload.get("audio_url")
+        if audio and audio_url:
+            raise ValueError("provide exactly one of audio_base64 or audio_url")
+        local_audio = audio if isinstance(audio, str) and audio.startswith("@") else audio_url
+        if isinstance(local_audio, str) and local_audio.startswith("@"):
+            path = _local_media_path(local_audio[1:], "audio")
+            if path.suffix.lower() not in {".mp3", ".wav", ".ogg", ".flac", ".m4a"}:
+                raise ValueError("synchronous audio supports MP3, WAV, OGG, FLAC or M4A")
+            if path.stat().st_size > 10_000_000:
+                raise ValueError("local audio exceeds 10 MB for synchronous GPU operations")
+            extension = path.suffix.lower().lstrip(".")
+            if "audio_extension" in payload and payload["audio_extension"] != extension:
+                raise ValueError("audio_extension must match the local audio file")
+            payload["audio_extension"] = extension
+        if isinstance(audio, str) and audio.startswith("@"):
+            payload["audio_url"] = f"@{path}"
+            payload.pop("audio_base64")
+        if bool(payload.get("audio_base64")) == bool(payload.get("audio_url")):
+            raise ValueError("provide exactly one of audio_base64 or audio_url")
     if operation in VIDEO_DIRECT_OPERATIONS:
-        _validate_video_direct_payload(operation, payload)
+        _validate_video_direct_payload(operation, payload, allow_local=True)
+    payload = _prepare_direct_media(operation, payload, config, dry_run=True)
     if getattr(args, "callback_url", None):
         payload["callback_url"] = args.callback_url
     if _should_spawn(args):
         input_arg = args.input
-        if input_arg.startswith("@"):
+        if payload != original_payload or not input_arg.startswith("@"):
+            input_arg = _spawn_content_argument(payload)
+        else:
             input_arg = "@" + str(Path(input_arg[1:]).resolve())
         task = build_spawn_task(
-            operation, {"input": input_arg, "team_id": _resolve_team_id(args, config)},
+            operation, {"input": input_arg,
+                        "team_id": _resolve_team_id(args, config)},
             deliver_to=getattr(args, "deliver_to", None),
             deliver_channel=getattr(args, "deliver_channel", None),
         )
         print(json.dumps(task, indent=2, ensure_ascii=False))
         return
-    if operation in SYNC_DIRECT_OPERATIONS:
-        audio = payload.get("audio_base64")
-        if isinstance(audio, str) and audio.startswith("@"):
-            path = Path(audio[1:])
-            if path.stat().st_size > 10_000_000:
-                raise ValueError("local audio exceeds 10 MB")
-            payload["audio_base64"] = base64.b64encode(path.read_bytes()).decode("ascii")
-            payload.setdefault("audio_extension", path.suffix.lower().lstrip("."))
     team_id = _resolve_team_id(args, config)
     if team_id:
         payload["team_id"] = team_id
+    if not dry_run:
+        payload = _prepare_direct_media(operation, payload, config, dry_run=False)
+        if operation in VIDEO_DIRECT_OPERATIONS:
+            _validate_video_direct_payload(operation, payload)
     if operation in SYNC_DIRECT_OPERATIONS:
         result = api_direct_operation(config, operation, payload, dry_run=dry_run)
         if dry_run:
-            result["body"] = {
-                **result["body"],
-                "audio_base64": f"<redacted: {len(payload.get('audio_base64', ''))} base64 characters>",
-            }
+            if "audio_base64" in payload:
+                result["body"] = {
+                    **result["body"],
+                    "audio_base64": f"<redacted: {len(payload['audio_base64'])} base64 characters>",
+                }
         elif operation == "voice-convert":
             audio, extension = _decode_audio_result(result.get("audio_data"), "wav")
             result = {"audio_file": _save_audio_result(audio, "voice-convert-", extension)}
@@ -1864,15 +2090,21 @@ def _timeline_media_url(value: Any) -> bool:
         return False
 
 
-def _validate_video_direct_payload(operation: str, payload: dict) -> None:
+def _validate_video_direct_payload(operation: str, payload: dict, *,
+                                   allow_local: bool = False) -> None:
     """Reject obvious invalid video tasks before spawning or submitting a paid POST."""
+    def valid_source(value):
+        return _timeline_media_url(value) or (
+            allow_local and isinstance(value, str) and value.startswith("@")
+        )
+
     if operation == "video-edit":
         allowed = {"source_video_url", "prompt", "start", "end", "resolution",
                    "output_format", "generate_audio", "team_id", "callback_url"}
         unknown = set(payload) - allowed
         if unknown:
             raise ValueError(f"unsupported video-edit field: {sorted(unknown)[0]}")
-        if not _timeline_media_url(payload.get("source_video_url")):
+        if not valid_source(payload.get("source_video_url")):
             raise ValueError("video-edit requires an https://assets.vicoo.ai source_video_url")
         if not isinstance(payload.get("prompt"), str) or not payload["prompt"].strip():
             raise ValueError("video-edit requires a non-empty prompt")
@@ -1918,7 +2150,7 @@ def _validate_video_direct_payload(operation: str, payload: dict) -> None:
         unknown = set(cut) - {"source_video_url", "source_duration", "start", "end"}
         if unknown:
             raise ValueError(f"unsupported video-timeline cut field: {sorted(unknown)[0]}")
-        if not _timeline_media_url(cut.get("source_video_url")):
+        if not valid_source(cut.get("source_video_url")):
             raise ValueError("video-timeline cut requires an https://assets.vicoo.ai source_video_url")
         start, end, duration = cut.get("start"), cut.get("end"), cut.get("source_duration")
         if not _finite_number(start) or not _finite_number(end):
@@ -1931,7 +2163,7 @@ def _validate_video_direct_payload(operation: str, payload: dict) -> None:
         raise ValueError("video-timeline requires cut or non-empty video_clips")
     else:
         for clip in clips:
-            if not isinstance(clip, dict) or not _timeline_media_url(clip.get("url")):
+            if not isinstance(clip, dict) or not valid_source(clip.get("url")):
                 raise ValueError("video-timeline video clip requires an https://assets.vicoo.ai url")
             unknown = set(clip) - {"url", "trim_start", "trim_end"}
             if unknown:
@@ -2044,8 +2276,20 @@ def cmd_spawn_task(args, config: dict):
         "aspect_ratio", "resolution", "duration", "model",
         "workflow_id", "inputs", "quality", "background",
     ]))
+    if args.inputs and args.subcommand in {"run-workflow", "run-workflow-dsl"}:
+        try:
+            workflow_inputs = json.loads(args.inputs)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"--inputs must be valid JSON: {exc}") from exc
+        if not isinstance(workflow_inputs, dict):
+            raise ValueError("--inputs must be a JSON object")
+        args_dict["inputs"] = json.dumps(_prepare_workflow_inputs(
+            workflow_inputs, config, dry_run=True, cache={},
+        ), ensure_ascii=False)
     if args.reference_urls:
-        args_dict["reference_urls"] = args.reference_urls
+        args_dict["reference_urls"] = _prepare_reference_urls(
+            args.reference_urls, [], "image", config, dry_run=True,
+        )
     if args.no_wait:
         args_dict["no_wait"] = True
 
@@ -2296,9 +2540,9 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=sorted(VALID_RESOLUTIONS_IMAGE),
                    help="Resolution: 512, 1K, 2K, 3K, 4K (model-dependent)")
     p.add_argument("--reference-urls", nargs="+", default=None,
-                   help="Reference images (HTTPS URLs or base64: data:image/png;base64,...)")
+                   help="Reference images (HTTPS URLs, base64 data URIs or @local-file)")
     p.add_argument("--reference-files", nargs="+", default=None,
-                   help="Reference images (local file paths, auto-converted to base64)")
+                   help="Reference images (local files uploaded to Creator before generation)")
     p.add_argument("--model", default=None, help="Model ID override")
     p.add_argument("--n", type=int, choices=[1, 2, 4], default=None,
                    help="Output images per job: 1, 2 or 4")
@@ -2345,15 +2589,15 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=sorted(VALID_RESOLUTIONS_VIDEO),
                    help="Resolution: 480p, 720p, 1080p, 4k (model-dependent)")
     p.add_argument("--content-items", default=None,
-                   help="Ordered role/url JSON or @JSON-file; images allow @local-file, video/audio require HTTP(S)")
+                   help="Ordered role/url JSON or @JSON-file; all media roles accept @local-file uploads")
     p.add_argument("--seed", type=int, default=None, help="Random seed")
     _add_online_search(p)
     p.add_argument("--omni-reference-task-type", choices=["auto", "reference", "edit", "extend"],
                    default=None, help="Seedance 2.5 reference task; edit allows duration -1 and adaptive ratio")
     p.add_argument("--reference-urls", nargs="+", default=None,
-                   help="Reference images for I2V (HTTPS URLs or base64)")
+                   help="Reference images for I2V (HTTPS URLs, base64 or @local-file)")
     p.add_argument("--reference-files", nargs="+", default=None,
-                   help="Reference images for I2V (local file paths, auto-converted to base64)")
+                   help="Reference images for I2V (local files uploaded to Creator)")
     p.add_argument("--model", default=None, help="Model ID override")
     p.add_argument("--output-format", default=None, choices=["mp4", "mov"],
                    help="Output container for Seedance 2.5: mp4 or mov (default: mp4)")
@@ -2449,7 +2693,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help=("Multimodal reference (Gemi models only). "
                          "One or more 'type=url' or 'type=@file' specs, "
                          "e.g. 'video=@./clip.mp4' or 'image=https://example.com/a.png'. "
-                         "Files are inlined as base64 data URIs (max 10 MB)."))
+                         "Local media is uploaded to Creator before generation."))
     p.add_argument("--callback-url", default=None,
                    help="If set, makes generation async → returns job_id")
     _add_dry_run(p)
@@ -2473,7 +2717,7 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=sorted(VALID_RESOLUTIONS_VIDEO),
                    help="Resolution")
     p.add_argument("--content-items", default=None,
-                   help="Ordered role/url JSON or @JSON-file; images/audio allow @local-file, video requires HTTP(S)")
+                   help="Ordered role/url JSON or @JSON-file; all media roles accept @local-file uploads")
     _add_online_search(p)
     group = p.add_mutually_exclusive_group()
     group.add_argument("--watermark", action="store_true", default=None)
@@ -2494,8 +2738,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- stt (voice → text) ---
     p = sub.add_parser("stt", help="Speech-to-text (async) — submit audio, poll for text")
-    p.add_argument("--audio", default=None, help="Base64 audio data (data:audio/wav;base64,...)")
-    p.add_argument("--audio-file", default=None, help="Local audio file (auto-converted to base64)")
+    p.add_argument("--audio", default=None,
+                   help="Audio data, public URL or @local-file")
+    p.add_argument("--audio-file", default=None, help="Local audio file uploaded before STT")
     _add_wait_and_dry_run(p)
 
     # --- tts (text → voice) ---
@@ -2681,6 +2926,17 @@ def main():
 
     try:
         handler(args, config)
+    except ArtClawUploadError as e:
+        error = {
+            "error": "upload_failed", "message": str(e),
+            "generation_submitted": False, "retryable": e.retryable,
+        }
+        if e.status_code:
+            error["http_status"] = e.status_code
+        if e.detail:
+            error["detail"] = e.detail
+        print(json.dumps(error, indent=2, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
     except ArtClawApiError as e:
         if args.command in DIRECT_OPERATIONS and (e.status_code >= 500 or e.code == "network_error"):
             print(json.dumps({
@@ -2720,6 +2976,11 @@ def main():
             "job_id": e.job_id,
             "status": e.status,
             "detail": e.error_detail,
+        }, indent=2, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
+    except (ValueError, OSError) as e:
+        print(json.dumps({
+            "error": "invalid_input", "message": str(e),
         }, indent=2, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
