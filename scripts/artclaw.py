@@ -461,7 +461,10 @@ DIRECT_MEDIA_FIELDS = {
     "smart-subtitles": {"video_url": "video"},
     "ai-dubbing": {"video_url": "video"},
     "video-enhance": {"video_url": "video"},
-    "video-edit": {"source_video_url": "video"},
+    "video-edit": {
+        "source_video_url": "video", "reference_image_urls": "image",
+        "reference_video_urls": "video", "reference_audio_urls": "audio",
+    },
     "video-extend": {
         "source_video_url": "video", "reference_image_urls": "image",
         "reference_video_urls": "video", "reference_audio_urls": "audio",
@@ -2100,12 +2103,17 @@ def _validate_video_direct_payload(operation: str, payload: dict, *,
 
     if operation == "video-edit":
         allowed = {"source_video_url", "prompt", "start", "end", "resolution",
-                   "output_format", "generate_audio", "team_id", "callback_url"}
+                   "output_format", "generate_audio", "reference_image_urls",
+                   "reference_video_urls", "reference_audio_urls", "team_id", "callback_url"}
         unknown = set(payload) - allowed
         if unknown:
             raise ValueError(f"unsupported video-edit field: {sorted(unknown)[0]}")
         if not valid_source(payload.get("source_video_url")):
             raise ValueError("video-edit requires an https://assets.vicoo.ai source_video_url")
+        for field in ("reference_image_urls", "reference_video_urls", "reference_audio_urls"):
+            urls = payload.get(field, [])
+            if not isinstance(urls, list) or len(urls) > 10 or not all(valid_source(url) for url in urls):
+                raise ValueError(f"{field} must contain at most 10 platform asset URLs or @local-files")
         if not isinstance(payload.get("prompt"), str) or not payload["prompt"].strip():
             raise ValueError("video-edit requires a non-empty prompt")
         start, end = payload.get("start"), payload.get("end")
