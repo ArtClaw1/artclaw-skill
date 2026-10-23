@@ -140,7 +140,7 @@ Use the operation-specific CLI commands below with `--input @request.json` or an
 
 - remove-bg-image: supply image_url for PhotoRoom or Aliyun, or image_urls for chroma key. Set matte_model to photoroom, chroma_key or aliyun_matting. PhotoRoom accepts output_size and fill_color. Chroma accepts key_mode, manual_key_hex, threshold and softness (both 0–255), despill_strength (0–1) and halo_pixels (0–20). Aliyun accepts background_type, bg_color, and paired target_width/target_height. The job returns an image.
 - remove-bg-video: supply video_url plus the matching algorithm controls above. The job returns a video.
-- voice-clone: supply engine (seed-audio or indextts), text, and reference_audio_urls. Seed Audio accepts 1–3 references plus speech_rate, loudness_rate, pitch_rate, output_format, and sample_rate (8000, 16000, 24000, 32000 or 48000 Hz; ogg_opus requires 48000). IndexTTS accepts one reference plus emo_alpha (0.1–2.0), use_random, use_emo_text, emo_text, emo_vector (8 comma-separated values), and emo_audio_url. The job returns audio.
+- voice-clone: supply engine (seed-audio or indextts), text, and reference_audio_urls. Seed Audio alternatively accepts `speaker` (a TTS 2.0 or cloned voice ID) without reference_audio_urls. The speaker becomes @音频1; optional URLs then become @音频2/3, with at most 3 references in total. It is sent upstream as `references[0].speaker`, not a top-level provider field. Seed Audio also accepts speech_rate, loudness_rate, pitch_rate, output_format, and sample_rate (8000, 16000, 24000, 32000 or 48000 Hz; ogg_opus requires 48000). IndexTTS accepts one reference plus emo_alpha (0.1–2.0), use_random, use_emo_text, emo_text, emo_vector (8 comma-separated values), and emo_audio_url, and rejects speaker. The job returns audio.
 - video-retalk: supply video_url and audio_url; optionally ref_image_url and video_extension. The job returns lip-synced video.
 - image-enhance: supply image_url; optionally tool_version (standard, professional, or max), multiple, target_width and/or target_height, and generative_enhance_mode. Each dimension is 64–6144 for standard or 64–10240 otherwise. enable_correct_color is max-only. The job returns an image.
 - smart-erase: supply video_url; optionally target_language and template_id. The job returns a cleaned video and available subtitle URLs.
@@ -159,6 +159,11 @@ python3 scripts/artclaw.py remove-bg-image \
 
 python3 scripts/artclaw.py voice-clone \
   --input '{"engine":"seed-audio","text":"Hello","reference_audio_urls":["https://example.com/voice.mp3"]}' \
+  --no-wait
+
+# Existing voice ID, with no reference upload (apiserver/platform-gen only; legacy GenAI does not support speaker)
+python3 scripts/artclaw.py voice-clone \
+  --input '{"engine":"seed-audio","text":"Hello","speaker":"YOUR_SPEAKER_ID"}' \
   --no-wait
 
 python3 scripts/artclaw.py voice-convert \
