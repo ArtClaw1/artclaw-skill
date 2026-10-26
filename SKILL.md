@@ -58,6 +58,7 @@ If platform detection is ambiguous, ask the user which platform they are using. 
 11. Mention only the relevant default/switchable models before generation.
 12. Answer model questions from `Capability and Model Defaults`; do not use CLI help or API calls for model lists.
 13. For batch video generation, never resubmit an item after a `job_id` was returned. If polling times out or the agent is interrupted, continue with `job-status`, `last-job`, or `history` for the existing `job_id`.
+14. Before `voice-clone`, read [Voice selection and cloning](references/voice-clone.md). Ask about voice choice only when it is missing; query `list-voices` for real catalog IDs and show a short shortlist. Seed Audio is the recommended default; preserve explicit IndexTTS choices. Seed Audio counts speaker plus reference audio together toward its three-reference limit.
 
 ---
 
@@ -160,7 +161,7 @@ ARTCLAW is ready. Here is everything I can create, the models available, and wha
 | 🎙️ Speech→Text | `stt` | — | audio (base64 / file) → text · async |
 | 🎙️ Text→Speech | `tts` | speakers: ★`en_male_tim_uranus_bigtts` · `zh_female_shuangkuaishu_moon_bigtts` · … | text → audio · pick voice via `--speaker` · async |
 | ✂️ Remove BG | `remove-bg`, `remove-bg-image`, `remove-bg-video` | PhotoRoom · chroma key · Aliyun | image and video background removal |
-| 🎙️ Voice | `voice-clone`, `voice-convert`, `stem-separate` | Seed Audio · IndexTTS · DDSP/UVR | clone speech, convert timbre, separate stems |
+| 🎙️ Voice | `voice-clone`, `list-voices`, `voice-convert`, `stem-separate` | ★Seed Audio · IndexTTS · DDSP/UVR | choose preset/reference audio for either clone model; Volcengine official speakers for Seed Audio only; convert timbre, separate stems |
 | 🎞️ Editing | `video-edit`, `video-extend`, `video-timeline`, `video-retalk`, `image-enhance`, `smart-erase`, `smart-subtitles`, `ai-dubbing`, `video-enhance` | Creator segment retake, Seedance 2.5 extend, compositor | selected-interval AI retake, continuation, timeline cuts/composition and other postprocessing |
 | 🧩 Workflow | `list-workflows` / `run-workflow` | preset workflows (run `list-workflows` to see them) | run a preset pipeline with JSON inputs |
 | 🧩 Workflow (DSL) | `run-workflow-dsl` | workflow DSL YAML source | run a workflow defined by DSL, compiled server-side |
@@ -185,6 +186,8 @@ Use this table for default and switchable models.
 | Audio/BGM  | `suno` + `Suvo V4.5 ALL`                    | `Suvo V4.5 ALL`, `Suvo V5` · `Suvo V5.5`                                                                                                                                                                                                                                                                                | Use `generate-audio` for standalone music/BGM.                                                                                                                                                                                                                                                                   |
 | Text       | `deepseek-v4-pro`                           | `deepseek-v4-pro`, `deepseek-v4-flash`, `Gemi 3.0 Flash`, `Gemi 3.1 Pro`, `Gemi 3.1 Flash Lite`, `Gemi 3.5 Flash`, `GT-5.5`                                                                                                                                                                                             | `deepseek-v4-flash` is the faster/cheaper option. **Gemi models support multimodal input** via `--reference-parts` (image/video/audio → text).                                                                                                                                                                   |
 | Voice      | STT: auto; TTS: `en_male_tim_uranus_bigtts` | TTS speakers, e.g. `en_male_tim_uranus_bigtts`, `zh_female_shuangkuaishu_moon_bigtts`                                                                                                                                                                                                                                   | `stt` = speech→text, `tts` = text→speech; both async. TTS voice is chosen via `--speaker`.                                                                                                                                                                                                                       |
+
+For `voice-clone`, the recommended default is **Seed Audio** (`seed-audio`); **IndexTTS** (`indextts`) is the alternative. Both accept preset/reference audio; Volcengine speaker IDs require Seed Audio. Query individual voices with `list-voices` as described in [Voice selection and cloning](references/voice-clone.md).
 
 ### Remove Background (`remove-bg`)
 
@@ -403,6 +406,8 @@ python3 scripts/artclaw.py generate-text \
 
 ### Voice STT / TTS (Async)
 
+For voice cloning or choosing preset-library/Volcengine official voices, use `voice-clone` and read [Voice selection and cloning](references/voice-clone.md). Its default is Seed Audio, with IndexTTS available on request. The separate `tts` command below retains its existing speaker defaults.
+
 Voice endpoints are **asynchronous**. Submit with audio/text → receive `job_id` → poll for result.
 
 ```bash
@@ -527,4 +532,4 @@ python3 scripts/artclaw.py self-update --dry-run
 
 Downloads `https://github.com/ArtClaw1/artclaw-skill/archive/refs/heads/main.zip`, atomically applies added or modified files, and reports a JSON summary. Does not delete local-only files.
 
-After updating, reload this Skill in your agent or start a new session that reads the updated instructions. Version 1.7.0 adds upload-first local image, video and audio inputs across generation commands; the matching REST deployment is required.
+After updating, reload this Skill in your agent or start a new session that reads the updated instructions. Version 1.8.0 adds read-only voice discovery, progressive voice selection and Seed Audio speaker inputs. Deploy the Proxy `/direct/voice-clone/validate` adapter first, then the matching `/voices` REST API and downstream speaker support before releasing this Skill; audio preview playback is not included.
