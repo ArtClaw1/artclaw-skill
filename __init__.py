@@ -10,7 +10,7 @@ Get your key: https://artclaw.com/settings
 """
 
 SKILL_NAME = "artclaw-creative-suite"
-SKILL_VERSION = "1.7.0"
+SKILL_VERSION = "1.8.0"
 API_BASE_URL = "https://artclaw.com/api/v1"
 
 API_CONFIG = {
@@ -20,6 +20,7 @@ API_CONFIG = {
 
 ENDPOINTS = {
     "upload_asset": ("POST", "/assets/upload"),
+    "list_voices": ("GET", "/voices"),
     # Generation (async, returns job_id)
     "generate_image": ("POST", "/generate/image"),
     "generate_video": ("POST", "/generate/video"),

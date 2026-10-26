@@ -16,6 +16,7 @@ All results output to stdout as JSON. Progress/diagnostics go to stderr.
 import argparse
 import base64
 import binascii
+import ipaddress
 import json
 import math
 import os
@@ -1105,6 +1106,13 @@ def api_voice_tts(config: dict, text: str, *,
 
 # --- Workflows ---
 
+def api_list_voices(config: dict, params: dict, *, dry_run: bool = False) -> dict:
+    return _request_with_retry(
+        "GET", f"{config['baseUrl']}/voices", api_key=config["apiKey"],
+        params=params, dry_run=dry_run,
+    )
+
+
 def api_list_workflows(config: dict, *, dry_run: bool = False) -> dict:
     # Trailing slash required! Without it: 307 redirect -> 502
     return _request_with_retry(
@@ -1938,6 +1946,18 @@ def cmd_list_jobs(args, config: dict):
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def cmd_list_voices(args, config: dict):
+    dry_run = getattr(args, "dry_run", False)
+    _check_api_key(config, allow_dry_run=dry_run)
+    if not 1 <= args.limit <= 5 or args.offset < 0:
+        raise ValueError("list-voices requires limit 1–5 and offset >= 0")
+    params = _collect_optional_args(args, ["source", "engine", "language", "gender", "scene", "q", "id", "offset", "limit"])
+    result = api_list_voices(config, params, dry_run=dry_run)
+    if not dry_run and args.catalog_version and result.get("catalog_version") != args.catalog_version:
+        raise ValueError("voice catalog changed; discard this page and old numbered choices, query again with offset 0")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def cmd_cancel_job(args, config: dict):
     """Cancel a pending or running job."""
     _check_api_key(config, allow_dry_run=getattr(args, "dry_run", False))
@@ -1996,6 +2016,8 @@ def cmd_direct_operation(args, config: dict):
         raise ValueError("--input must be a JSON object")
     original_payload = dict(payload)
     operation = args.command
+    if operation == "voice-clone":
+        _validate_voice_clone_payload(payload)
     if operation in SYNC_DIRECT_OPERATIONS:
         audio = payload.get("audio_base64")
         audio_url = payload.get("audio_url")
@@ -2069,6 +2091,93 @@ def cmd_direct_operation(args, config: dict):
             {}, no_wait=args.no_wait, dry_run=dry_run,
         )
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _validate_voice_clone_payload(payload: dict) -> None:
+    """Check model/reference boundaries before any local upload or background spawn."""
+    seed_controls = {"speech_rate", "loudness_rate", "pitch_rate", "output_format", "sample_rate"}
+    index_controls = {"emo_alpha", "use_random", "use_emo_text", "emo_text", "emo_vector", "emo_audio_url"}
+    allowed = {"engine", "text", "speaker", "reference_audio_urls", "team_id", "callback_url"} | seed_controls | index_controls
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError(f"unsupported voice-clone field: {sorted(unknown)[0]}")
+    engine = payload.get("engine")
+    if engine not in ("seed-audio", "indextts"):
+        raise ValueError("voice-clone requires engine seed-audio or indextts")
+    if not isinstance(payload.get("text"), str) or not payload["text"].strip():
+        raise ValueError("voice-clone requires nonblank text")
+    if engine == "seed-audio":
+        payload["text"] = payload["text"].strip()
+    speaker = payload.get("speaker")
+    if speaker is not None:
+        if not isinstance(speaker, str) or not speaker.strip():
+            raise ValueError("speaker must be one nonblank string")
+        payload["speaker"] = speaker.strip()
+    urls = payload.get("reference_audio_urls", [])
+    if not isinstance(urls, list) or not all(isinstance(url, str) and url.strip() for url in urls):
+        raise ValueError("reference_audio_urls must be a list of audio URLs or @local-files")
+    for key in ("use_random", "use_emo_text"):
+        if key in payload and not isinstance(payload[key], bool):
+            raise ValueError(f"{key} must be a boolean")
+    for key in ("emo_text", "emo_vector", "emo_audio_url"):
+        if key in payload and not isinstance(payload[key], str):
+            raise ValueError(f"{key} must be a string")
+    for url in urls + ([payload["emo_audio_url"]] if payload.get("emo_audio_url") else []):
+        if url.startswith("@"):
+            continue  # All local paths are checked in the dry media-preparation pass.
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if parsed.scheme != "https" or not host or parsed.username or parsed.password:
+            raise ValueError("reference audio must use public HTTPS or @local-file")
+        if host.lower() == "localhost" or host.lower().endswith(".localhost"):
+            raise ValueError("local audio hosts are not allowed")
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if not address.is_global:
+                raise ValueError("private audio hosts are not allowed")
+    for key, lower, upper in (("speech_rate", -50, 100), ("loudness_rate", -50, 100), ("pitch_rate", -12, 12)):
+        value = payload.get(key)
+        if value is not None and (type(value) is not int or not lower <= value <= upper):
+            raise ValueError(f"{key} must be an integer between {lower} and {upper}")
+    if payload.get("output_format") not in (None, "wav", "mp3", "pcm", "ogg_opus"):
+        raise ValueError("output_format must be wav, mp3, pcm or ogg_opus")
+    if payload.get("sample_rate") not in (None, 8000, 16000, 24000, 32000, 48000):
+        raise ValueError("unsupported sample_rate")
+    if payload.get("output_format") == "ogg_opus" and payload.get("sample_rate") not in (None, 48000):
+        raise ValueError("ogg_opus requires 48000Hz")
+    alpha = payload.get("emo_alpha")
+    if alpha is not None and (not _finite_number(alpha) or not 0.1 <= alpha <= 2):
+        raise ValueError("emo_alpha must be between 0.1 and 2")
+    if payload.get("emo_vector"):
+        try:
+            vector = [float(value) for value in payload["emo_vector"].split(",")]
+        except ValueError as exc:
+            raise ValueError("emo_vector requires eight numbers between 0 and 1") from exc
+        if len(vector) != 8 or any(not math.isfinite(value) or not 0 <= value <= 1 for value in vector):
+            raise ValueError("emo_vector requires eight numbers between 0 and 1")
+    if engine == "indextts":
+        if speaker is not None or len(urls) != 1:
+            raise ValueError("IndexTTS requires exactly one reference audio and does not support speaker")
+        if any(payload.get(key) is not None for key in seed_controls):
+            raise ValueError("Seed Audio controls are not valid for IndexTTS")
+    else:
+        if not 1 <= len(urls) + int(speaker is not None) <= 3:
+            raise ValueError("Seed Audio requires 1–3 references in total: speaker + audio <= 3")
+        if payload.get("emo_alpha") is not None or any(payload.get(key) for key in index_controls - {"emo_alpha"}):
+            raise ValueError("IndexTTS emotion controls are not valid for Seed Audio")
+        text = payload["text"]
+        assembled = text if "@音频" in text else f"@音频1 说：“{text}”"
+        if len(assembled) > 3000:
+            raise ValueError("Seed Audio assembled prompt must not exceed 3000 characters")
+        count = len(urls) + int(speaker is not None)
+        if any(not 1 <= int(index) <= count for index in re.findall(r"@音频([0-9]+)", text)):
+            raise ValueError("Seed Audio reference index must address speaker first, then audio URLs (1–3)")
+        for url in urls:
+            if url.startswith("@") and _local_media_path(url[1:], "audio").stat().st_size > 10 * 1024 * 1024:
+                raise ValueError("Seed Audio reference audio must not exceed 10 MiB")
 
 
 def _finite_number(value: Any) -> bool:
@@ -2804,6 +2913,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_dry_run(p)
 
     # --- list-jobs ---
+    p = sub.add_parser("list-voices", help="Browse official and Volcengine voices (read-only, no audio playback)")
+    p.add_argument("--source", choices=["all", "official", "volcengine"], default="all")
+    p.add_argument("--engine", choices=["seed-audio", "indextts"], default="seed-audio")
+    p.add_argument("--language", help="Language code, e.g. zh, en, es; unlabelled voices remain last")
+    p.add_argument("--gender", choices=["male", "female", "neutral"])
+    p.add_argument("--scene", help="Scene/tag substring in the source metadata")
+    p.add_argument("--q", help="Search name, ID, style, description and tags")
+    p.add_argument("--id", help="Exact source-prefixed ID from a previous catalog response")
+    p.add_argument("--offset", type=int, default=0)
+    p.add_argument("--limit", type=int, default=3, help="Page size 1–5 (default 3)")
+    p.add_argument("--catalog-version", help="Reject a changed catalog when continuing the same filtered search")
+    _add_dry_run(p)
+
+    # --- list-jobs ---
     p = sub.add_parser("list-jobs", help="List historical jobs")
     p.add_argument("--status", default=None,
                    help="Filter by status (pending, running, success, failed, ...)")
@@ -2904,6 +3027,7 @@ COMMAND_MAP = {
     "run-workflow-dsl": cmd_run_workflow_dsl,
     "job-status": cmd_job_status,
     "list-jobs": cmd_list_jobs,
+    "list-voices": cmd_list_voices,
     "cancel-job": cmd_cancel_job,
     "account-info": cmd_account_info,
     "verify-key": cmd_verify_key,
