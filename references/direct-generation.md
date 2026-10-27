@@ -16,7 +16,7 @@ These options submit REST generation jobs directly. Apply the selected platform 
 | `--watermark`                                  | Enable the provider's visible watermark where supported.                                                             |
 | `--background auto\|opaque\|transparent`       | GT-Image background. Transparent output needs PNG or WebP.                                                           |
 
-Resolution examples: Navo Bana 2.5 Flash Image uses `1K`; Navo Bana 3.0 Pro Image supports `1K/2K/4K`; Navo Bana 3.1 Flash Image adds `512`. Seedream 5.0 uses `2K/3K`, while Seedream 5.0 Pro uses `1K/2K`. Do not assume every model supports every CLI choice.
+Resolution examples: Navo Bana 2.5 Flash Image uses `1K`; Navo Bana 3.0 Pro Image supports `1K/2K/4K`; Navo Bana 3.1 Flash Image adds `512`. Seedream 5.0 uses `2K/3K` and defaults to `2K` when `--resolution` is omitted (including when `--model` is omitted). Seedream 5.0 Pro uses `1K/2K`. Do not assume every model supports every CLI choice.
 
 New direct models: `Navo Bana 3.1 Flash Lite Image` uses `1K` and its 14 supported ratios; `Kling Image 3.0` uses `1K/2K`, `16:9|9:16|1:1`, at most one reference image; `Kling Image 3.0 Omni` uses `1K/2K/4K`, the same three ratios and multiple references. Use their exact names with `generate-image --model`.
 

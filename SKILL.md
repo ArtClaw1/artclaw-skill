@@ -97,7 +97,7 @@ All local ARTCLAW data is stored under `~/.artclaw/`, including `config.json`, `
 
 ## Team Billing
 
-For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to image/video/audio generation, background removal, voice operations, lip sync and postprocessing. An API key bound to a team takes precedence over a request `team_id`; the API checks team membership.
+For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to image/video/audio generation, background removal, voice operations, lip sync, postprocessing, and billable workflow nodes. An API key bound to a team takes precedence over a request `team_id` on direct generation endpoints; workflow commands must send a team ID explicitly or through `ARTCLAW_TEAM_ID` / persisted config. The API checks team membership.
 
 **The agent must guide the user to provide their `team_id` before generating with team billing.**
 
@@ -441,10 +441,12 @@ python3 scripts/artclaw.py list-workflows
 python3 scripts/artclaw.py run-workflow \
   --workflow-id "text-to-image-basic" \
   --inputs '{"prompt": "Anime-style forest"}' \
+  --team-id 8f8bacf4-e130-4221-8bab-58cf14c755fb \
   --no-wait
 ```
 
 Replace `--no-wait` with `--spawn`, `--deliver-to`, and `--deliver-channel` only when the current platform adapter says to do so.
+For personal billing, omit `--team-id` and leave `ARTCLAW_TEAM_ID` and persisted `teamId` unset. The selected team ID is sent as a top-level request field, not as a workflow input. Both workflow commands and `spawn-task` use the same team selection priority as direct generation.
 
 ### Execute Workflow from DSL
 
@@ -454,6 +456,7 @@ For a workflow the caller defines as DSL YAML (not a preset), use `run-workflow-
 python3 scripts/artclaw.py run-workflow-dsl \
   --dsl-file ./my-workflow.yaml \
   --inputs '{"prompt": "a cat"}' \
+  --team-id 8f8bacf4-e130-4221-8bab-58cf14c755fb \
   --no-wait
 ```
 

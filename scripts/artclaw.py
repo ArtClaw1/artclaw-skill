@@ -824,6 +824,8 @@ def api_generate_image(config: dict, prompt: str, *,
     body: Dict[str, Any] = {"prompt": prompt}
     if aspect_ratio:
         body["aspect_ratio"] = aspect_ratio
+    if not resolution and (not model or model == "doubao-seedream-5-0-260128"):
+        resolution = "2K"
     if resolution:
         body["resolution"] = resolution
     if reference_urls:
@@ -1123,12 +1125,15 @@ def api_list_workflows(config: dict, *, dry_run: bool = False) -> dict:
 
 def api_run_workflow(config: dict, workflow_id: str, inputs: dict, *,
                      timeout: int = None, callback_url: str = None,
+                     team_id: str = None,
                      dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"inputs": inputs}
     if timeout is not None:
         body["timeout"] = timeout
     if callback_url:
         body["callback_url"] = callback_url
+    if team_id:
+        body["team_id"] = team_id
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/workflows/{workflow_id}/run",
         api_key=config["apiKey"], json_body=body, dry_run=dry_run,
@@ -1137,6 +1142,7 @@ def api_run_workflow(config: dict, workflow_id: str, inputs: dict, *,
 
 def api_run_workflow_from_dsl(config: dict, dsl: str, inputs: dict, *,
                              timeout: int = None, callback_url: str = None,
+                             team_id: str = None,
                              dry_run: bool = False) -> dict:
     """执行由 workflow DSL 源码定义的工作流（服务端编译后执行）。"""
     body: Dict[str, Any] = {"dsl": dsl, "inputs": inputs}
@@ -1144,6 +1150,8 @@ def api_run_workflow_from_dsl(config: dict, dsl: str, inputs: dict, *,
         body["timeout"] = timeout
     if callback_url:
         body["callback_url"] = callback_url
+    if team_id:
+        body["team_id"] = team_id
     return _request_with_retry(
         "POST", f"{config['baseUrl']}/workflows/run",
         api_key=config["apiKey"], json_body=body, dry_run=dry_run,
@@ -1844,6 +1852,7 @@ def cmd_run_workflow(args, config: dict):
         "inputs": inputs,
     }
     api_kwargs.update(_collect_optional_args(args, ["timeout", "callback_url"]))
+    api_kwargs["team_id"] = _resolve_team_id(args, config)
 
     if _should_spawn(args):
         result = build_spawn_task(
@@ -1906,6 +1915,7 @@ def cmd_run_workflow_dsl(args, config: dict):
         "inputs": inputs,
     }
     api_kwargs.update(_collect_optional_args(args, ["timeout", "callback_url"]))
+    api_kwargs["team_id"] = _resolve_team_id(args, config)
 
     if _should_spawn(args):
         result = build_spawn_task(
@@ -2391,8 +2401,12 @@ def cmd_spawn_task(args, config: dict):
     args_dict: Dict[str, Any] = {"prompt": args.prompt}
     args_dict.update(_collect_optional_args(args, [
         "aspect_ratio", "resolution", "duration", "model",
-        "workflow_id", "inputs", "quality", "background",
+        "workflow_id", "dsl", "inputs", "quality", "background",
     ]))
+    if args.dsl_file:
+        args_dict["dsl_file"] = str(Path(args.dsl_file).resolve())
+    if args.subcommand in {"run-workflow", "run-workflow-dsl"}:
+        args_dict["team_id"] = _resolve_team_id(args, config)
     if args.inputs and args.subcommand in {"run-workflow", "run-workflow-dsl"}:
         try:
             workflow_inputs = json.loads(args.inputs)
@@ -2878,6 +2892,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help='Workflow inputs as JSON string (e.g. \'{"prompt": "a cat"}\')')
     p.add_argument("--timeout", type=int, default=None,
                    help="Workflow timeout in seconds")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill workflow generation to the team's credits")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -2898,6 +2914,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help='Workflow inputs as JSON string (e.g. \'{"prompt": "a cat"}\')')
     p.add_argument("--timeout", type=int, default=None,
                    help="Workflow timeout in seconds")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill workflow generation to the team's credits")
     p.add_argument("--spawn", action="store_true", default=False,
                    help="Output sessions_spawn_args payload instead of running directly")
     p.add_argument("--deliver-to", default=None,
@@ -2977,12 +2995,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Video duration (seconds)")
     p.add_argument("--model", default=None, help="Model ID override")
     p.add_argument("--workflow-id", default=None, help="Workflow ID")
+    p.add_argument("--dsl", default=None, help="Workflow DSL YAML source")
+    p.add_argument("--dsl-file", default=None, help="Workflow DSL YAML file")
     p.add_argument("--quality", default=None,
                    help="Image generation only; GT-Image-2.5 / GT-Image-2.5-Flash: "
                         "low/medium/high/xhigh/max (default: high); GT-Image-2: auto/low/medium/high")
     p.add_argument("--background", default=None,
                    help="Image generation only; GT-Image family background mode: auto/opaque/transparent")
     p.add_argument("--inputs", default=None, help="Workflow inputs (JSON)")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID for workflow billing")
     p.add_argument("--reference-urls", nargs="+", default=None,
                    help="Reference URLs")
     p.add_argument("--no-wait", action="store_true", default=False,
