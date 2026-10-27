@@ -97,7 +97,7 @@ All local ARTCLAW data is stored under `~/.artclaw/`, including `config.json`, `
 
 ## Team Billing
 
-For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to image/video/audio generation, background removal, voice operations, lip sync, postprocessing, and billable workflow nodes. An API key bound to a team takes precedence over a request `team_id` on direct generation endpoints; workflow commands must send a team ID explicitly or through `ARTCLAW_TEAM_ID` / persisted config. The API checks team membership.
+For team accounts, generation tasks can bill a team's credits instead of the individual account by sending a `team_id` (a team UUID) in the request body. This applies to image/video/audio/text generation, background removal, voice operations, lip sync, postprocessing, and billable workflow nodes. An API key bound to a team takes precedence over a request `team_id` on direct generation endpoints; workflow commands must send a team ID explicitly or through `ARTCLAW_TEAM_ID` / persisted config. The API checks team membership.
 
 **The agent must guide the user to provide their `team_id` before generating with team billing.**
 
@@ -370,6 +370,8 @@ python3 scripts/artclaw.py generate-text \
 
 Sync mode (default) returns text directly. Add `--callback-url` for async job mode.
 
+Text generation supports `--team-id <team-uuid>` in sync, callback and multimodal modes. Team selection follows `--team-id` > `ARTCLAW_TEAM_ID` > persisted `teamId`; the CLI sends the selected value as top-level `team_id`. When none is configured, the field is omitted for personal billing. The service checks team membership, and a team bound to authentication takes precedence.
+
 ```bash
 python3 scripts/artclaw.py generate-text \
   --prompt "Return a JSON list of 3 startup ideas" \
@@ -400,6 +402,7 @@ python3 scripts/artclaw.py generate-text \
 | `--provider`           | LLM provider                            | `deepseek` (default)                                                                                                                  |
 | `--system-instruction` | System prompt                           | Text                                                                                                                                  |
 | `--response-format`    | Output format                           | `text` (default), `json_object`                                                                                                       |
+| `--team-id`            | Team UUID for team billing              | Overrides `ARTCLAW_TEAM_ID`, then persisted `teamId`                                                                                  |
 | `--reference-parts`    | Multimodal reference (Gemi models only) | One or more `type=url` / `type=@file`, e.g. `video=@./clip.mp4`, `image=https://...`                                                  |
 
 **Local references for `--reference-parts`.** `type=@file` uploads the local image, video or audio, then sends its CDN URL in the same typed slot. Existing HTTPS URLs and `data:<mime>;base64,...` inputs remain supported. Local upload limits are 30 MB for images and 50 MB for video/audio; a model may impose tighter limits. `--reference-parts` with a non-Gemi model errors out client-side.
