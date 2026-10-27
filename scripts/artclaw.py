@@ -977,6 +977,7 @@ def api_generate_text(config: dict, prompt: str, *,
                       system_instruction: str = None,
                       response_format: str = None,
                       reference_parts: List[Dict[str, str]] = None,
+                      team_id: str = None,
                       callback_url: str = None,
                       dry_run: bool = False) -> dict:
     body: Dict[str, Any] = {"prompt": prompt, "model": model, "provider": provider}
@@ -986,6 +987,8 @@ def api_generate_text(config: dict, prompt: str, *,
         body["response_format"] = response_format
     if reference_parts:
         body["reference_parts"] = reference_parts
+    if team_id:
+        body["team_id"] = team_id
     if callback_url:
         body["callback_url"] = callback_url
     return _request_with_retry(
@@ -1706,6 +1709,7 @@ def cmd_generate_text(args, config: dict):
         "model", "provider", "system_instruction", "response_format",
         "callback_url",
     ]))
+    api_kwargs["team_id"] = _resolve_team_id(args, config)
 
     # Multimodal reference (image/video/audio → text) is Gemi-only. Resolve the
     # display name to see whether it maps to a Gemini model; gate reference_parts
@@ -2827,6 +2831,8 @@ def build_parser() -> argparse.ArgumentParser:
                          "Local media is uploaded to Creator before generation."))
     p.add_argument("--callback-url", default=None,
                    help="If set, makes generation async → returns job_id")
+    p.add_argument("--team-id", default=None,
+                   help="Team UUID — bill to the team's credits instead of the account")
     _add_dry_run(p)
 
     # --- generate-seedance-video ---
