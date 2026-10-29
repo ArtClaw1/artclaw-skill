@@ -236,7 +236,8 @@ LOCAL_MEDIA_TYPES = {
         ".ogg": "audio/ogg", ".aac": "audio/aac", ".flac": "audio/flac",
     },
 }
-LOCAL_MEDIA_LIMITS = {"image": 30 * 1024 * 1024, "video": 50 * 1024 * 1024,
+# Match Creator defaults in packages/frontend/src/services/storageService.ts.
+LOCAL_MEDIA_LIMITS = {"image": 30 * 1024 * 1024, "video": 250 * 1024 * 1024,
                       "audio": 50 * 1024 * 1024}
 
 # Display name → real model ID (mirrors vicoo-mcp-server model_policy._NAME_TO_MODEL).
