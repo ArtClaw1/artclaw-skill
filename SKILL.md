@@ -405,7 +405,7 @@ python3 scripts/artclaw.py generate-text \
 | `--team-id`            | Team UUID for team billing              | Overrides `ARTCLAW_TEAM_ID`, then persisted `teamId`                                                                                  |
 | `--reference-parts`    | Multimodal reference (Gemi models only) | One or more `type=url` / `type=@file`, e.g. `video=@./clip.mp4`, `image=https://...`                                                  |
 
-**Local references for `--reference-parts`.** `type=@file` uploads the local image, video or audio, then sends its CDN URL in the same typed slot. Existing HTTPS URLs and `data:<mime>;base64,...` inputs remain supported. Local upload limits are 30 MB for images and 50 MB for video/audio; a model may impose tighter limits. `--reference-parts` with a non-Gemi model errors out client-side.
+**Local references for `--reference-parts`.** `type=@file` uploads the local image, video or audio, then sends its CDN URL in the same typed slot. Existing HTTPS URLs and `data:<mime>;base64,...` inputs remain supported. Local upload limits match Creator defaults: 30 MiB for images, 250 MiB for video and 50 MiB for audio (1 MiB = 1024 * 1024 bytes). ARTCLAW applies no separate upload-frequency quota; Creator Proxy limits and model-specific constraints still apply. `--reference-parts` with a non-Gemi model errors out client-side.
 
 ### Voice STT / TTS (Async)
 
