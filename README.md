@@ -80,6 +80,6 @@ Then reload the Skill in your agent or start a new session that reads its update
 
 ## 📋 Version
 
-- **Version:** 1.7.0
+- **Version:** 1.8.0
 - **Author:** ARTCLAW Team
 - **License:** MIT
