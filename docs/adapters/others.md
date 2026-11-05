@@ -1,40 +1,19 @@
 # Generic Adapter
 
-Use this adapter when the current platform has no dedicated adapter.
+Use this adapter when no dedicated adapter applies. An arbitrary delegation tool does not imply compatibility with OpenClaw's `sessions_spawn_args`.
 
-First, determine which execution model applies:
-
-## Claw-compatible Platform
-
-If the platform exposes a sub-agent spawn tool (e.g. `sessions_spawn`, `delegate_task`, or equivalent), follow `docs/adapters/openclaw.md` instead of this file.
-
-## Plain CLI Platform
-
-If no spawn tool is available, use this execution model.
-
-### Execution Model
-
-For generation and workflow commands:
-
-1. Do not use `--spawn`.
-2. Use `--no-wait` so the CLI submits the job and returns immediately.
-3. If the user explicitly asks to wait, you may omit `--no-wait`.
-4. Return `job_id` to the user along with the `job-status` command to check progress.
-5. If waiting or later polling times out after a `job_id` was returned, do not submit the same generation again automatically.
-
-Submit command form:
+For workflow execution, including analysis:
 
 ```bash
-python3 scripts/artclaw.py generate-image \
-  --prompt "A cute kitten rolling on the floor" \
-  --aspect-ratio 1:1 \
-  --no-wait
+python3 /absolute/path/scripts/artclaw.py workflow run \
+  --dsl-file /absolute/path/task.yaml --inputs '{}' \
+  --request-id request_1234567890 --no-wait
 ```
 
-Status command:
+Return the accepted `job_id` and track it with `jobs status <job_id>`.
 
-```bash
-python3 scripts/artclaw.py job-status --job-id "job_xxxxxxxx"
-```
+If the user asks to wait, use `jobs wait <job_id>` for an accepted job, or omit `--no-wait` on initial submission with an available background execution tool. Tell the user when background work starts. Do not block the main turn silently.
 
-Analysis commands are synchronous and may run normally.
+A polling timeout is not a reason to regenerate. Use `workflow recover <request_id>` for uncertain acceptance, preserving team context. Deliver all named outputs and artifacts through available native rendering or links/paths.
+
+Authentication, discovery and validation run synchronously. Use OpenClaw's adapter only when its exact spawn interface and a current delivery target are available.

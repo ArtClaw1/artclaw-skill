@@ -1,49 +1,27 @@
 # Claude Code Adapter
 
-Use this adapter in Claude Code.
+All workflow executions, including analysis workflows, use the same async strategy. Authentication, discovery and validation can run in the foreground.
 
-## Execution Model
+## Preferred: background task
 
-Do not use `--spawn` unless the current Claude Code environment explicitly provides an OpenClaw-compatible spawn tool.
-
-Claude Code has two different async modes. Prefer the first one.
-
-### Preferred: Claude Code Background Task
-
-Use this when Claude Code's `Bash` tool supports `run_in_background`.
-
-Run generation/workflow commands without `--no-wait` and set `run_in_background: true` on the Bash tool call. This creates a Claude Code background task visible through `/tasks`.
-
-Example Bash tool input:
+When Bash supports `run_in_background`, run `workflow run` without `--no-wait`:
 
 ```json
 {
-  "command": "python3 /absolute/path/to/scripts/artclaw.py generate-image --prompt \"A cute kitten rolling on the floor\" --aspect-ratio 1:1 --resolution 2K",
-  "description": "Generate ARTCLAW image",
+  "command": "python3 /absolute/path/scripts/artclaw.py workflow run --dsl-file /absolute/path/task.yaml --inputs '{}' --request-id request_1234567890",
+  "description": "Run ARTCLAW workflow",
   "run_in_background": true
 }
 ```
 
-**CRITICAL Rules:**
+Tell the user the background task has started; it is visible in `/tasks`. This does not yet confirm server acceptance.
 
-1. Use `run_in_background: true`, not a long foreground Bash timeout.
-2. Do not add `--no-wait` in this mode, because the background task should wait, poll, and return the final media URL.
-3. Immediately tell the user that a Claude Code background task was started.
-4. The user can inspect it with `/tasks`.
-5. **DO NOT manually poll with `job-status` after the background task completes.** The background task already polls internally and returns the final result in its output. When the background task completes, use the `Read` tool to read the output file path (provided in the task completion notification) to get the final result JSON.
-6. **The background task output contains the complete result** including `status: "success"` and the media URL. No further polling is needed.
-7. If the output contains `poll_timeout` and a `job_id`, do not rerun the generation command. Track the existing `job_id` instead.
+The process polls internally. Wait for the completion notification, then read its output file for the full JSON result. Do not use `TaskOutput` or start a duplicate polling loop. Deliver all named outputs and artifacts, including text and structured results.
 
-**Do not use `TaskOutput` to check or wait for task status.** Claude Code automatically notifies the agent when the background task finishes. After submission, simply tell the user the task was started and wait for the automatic notification.
+On `poll_timeout`, continue the existing job with `jobs status` or `jobs wait` as needed. For uncertain acceptance use `workflow recover` with the original request ID and team context. Never rerun with a fresh ID.
 
-### Fallback: ARTCLAW Server Async
+## Fallback: server async
 
-**Do not use this fallback unless Claude Code's Bash tool does not support `run_in_background`.** Most Claude Code environments support it.
+If Bash lacks background support, use `workflow run ... --no-wait`. Return the accepted `job_id`; use `jobs status <job_id>` for follow-up. This creates a server job, not a Claude Code background task.
 
-1. Run `python3 scripts/artclaw.py generate-* ... --no-wait` or `run-workflow ... --no-wait`.
-2. Immediately tell the user the job has been submitted and include the `job_id`.
-3. Use `job-status` or `last-job` only for follow-up when the user asks.
-4. Do not tell the user this created a Claude Code background task; it did not.
-5. If follow-up polling times out after a `job_id` was returned, do not submit a new generation request automatically.
-
-Analysis commands are synchronous and may run normally.
+Use the OpenClaw adapter only if the environment actually provides its compatible `sessions_spawn` interface and a current delivery target.

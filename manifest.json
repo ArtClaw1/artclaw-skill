@@ -1,8 +1,8 @@
 {
   "name": "artclaw-creative-suite",
-  "version": "1.8.0",
+  "version": "2.0.0",
   "displayName": "ARTCLAW AI Creative Suite",
-  "description": "Invoke ARTCLAW platform's AI content creation capabilities via REST API. Supports AI image generation, video generation with optional BGM/audio, standalone audio/BGM generation, text generation, voice STT/TTS, workflow execution, model selection guidance, and more.",
+  "description": "Discover current ARTCLAW nodes and execute single-step or multi-step DSL workflows through a stable CLI.",
   "author": {
     "name": "ARTCLAW Team",
     "url": "https://artclaw.com/"
@@ -47,7 +47,7 @@
     },
     "artclaw": {
       "path": "scripts/artclaw.py",
-      "description": "ArtClaw REST API CLI client for generation, voice, postprocessing, workflows and jobs. JSON output, dry-run and async spawn support.",
+      "description": "Workflow discovery, validation, submission, request recovery and job management. JSON output with platform background execution support.",
       "runtime": "python3",
       "dependencies": ["requests"],
       "credentials": "ARTCLAW_API_KEY environment variable"
@@ -57,167 +57,11 @@
     "baseUrl": "https://artclaw.com/api/v1",
     "transport": "http",
     "endpoints": {
-      "voices": {
-        "list": {
-          "method": "GET",
-          "path": "/voices",
-          "description": "Authenticated read-only voice catalog. Query source, engine, language, gender, scene, q, id, offset and limit (default 3, maximum 5). Returns items, total, next_offset and catalog_version; each item has a stable source-prefixed id, engines and selection (speaker or reference_audio_urls). No audio playback."
-        }
-      },
       "media": {
         "upload": {
           "method": "POST",
           "path": "/assets/upload",
           "description": "Authenticated local image/video/audio upload before generation"
-        }
-      },
-      "generate": {
-        "image": {
-          "method": "POST",
-          "path": "/generate/image"
-        },
-        "video": {
-          "method": "POST",
-          "path": "/generate/video"
-        },
-        "seedance-video": {
-          "method": "POST",
-          "path": "/volcengine/video",
-          "description": "Seedance 2.0/2.5 video generation with return_last_frame, priority, safety_identifier"
-        },
-        "seedance-tasks-get": {
-          "method": "GET",
-          "path": "/volcengine/video/tasks/{task_id}"
-        },
-        "seedance-tasks-cancel": {
-          "method": "POST",
-          "path": "/volcengine/video/tasks/{task_id}/cancel"
-        },
-        "audio": {
-          "method": "POST",
-          "path": "/generate/audio"
-        },
-        "text": {
-          "method": "POST",
-          "path": "/generate/text",
-          "description": "Text generation (sync by default, async with callback_url)"
-        },
-        "text-chat-create": {
-          "method": "POST",
-          "path": "/generate/text/chat"
-        },
-        "text-chat-message": {
-          "method": "POST",
-          "path": "/generate/text/chat/{chat_id}/message"
-        },
-        "text-chat-history": {
-          "method": "GET",
-          "path": "/generate/text/chat/{chat_id}/history"
-        },
-        "remove-bg": {
-          "method": "POST",
-          "path": "/generate/remove-bg",
-          "description": "Remove image background (async). Returns job_id, poll GET /jobs/{job_id}."
-        },
-        "remove-bg-image": {
-          "method": "POST",
-          "path": "/generate/remove-bg/image",
-          "mode": "async"
-        },
-        "remove-bg-video": {
-          "method": "POST",
-          "path": "/generate/remove-bg/video",
-          "mode": "async"
-        },
-        "voice-clone": { "method": "POST", "path": "/generate/voice/clone", "mode": "async" },
-        "voice-convert": { "method": "POST", "path": "/generate/voice/convert", "mode": "sync" },
-        "stem-separate": { "method": "POST", "path": "/generate/voice/separate", "mode": "sync" },
-        "video-retalk": { "method": "POST", "path": "/generate/video-retalk", "mode": "async" },
-        "image-enhance": { "method": "POST", "path": "/generate/image-enhance", "mode": "async" },
-        "smart-erase": { "method": "POST", "path": "/generate/smart-erase", "mode": "async" },
-        "smart-subtitles": {
-          "method": "POST",
-          "path": "/generate/smart-subtitles",
-          "mode": "async"
-        },
-        "ai-dubbing": { "method": "POST", "path": "/generate/ai-dubbing", "mode": "async" },
-        "video-enhance": { "method": "POST", "path": "/generate/video-enhance", "mode": "async" },
-        "video-edit": { "method": "POST", "path": "/generate/video-edit", "mode": "async" },
-        "video-extend": { "method": "POST", "path": "/generate/video-extend", "mode": "async" },
-        "video-timeline": { "method": "POST", "path": "/generate/video-timeline", "mode": "async" }
-      },
-      "voice": {
-        "stt": {
-          "method": "POST",
-          "path": "/generate/voice/stt",
-          "mode": "async",
-          "description": "Speech-to-text (async). Submit with audio base64, returns job_id. Poll GET /jobs/{job_id} for result."
-        },
-        "tts": {
-          "method": "POST",
-          "path": "/generate/voice/tts",
-          "mode": "async",
-          "description": "Text-to-speech (async). Submit with text, returns job_id. Poll GET /jobs/{job_id} for result."
-        }
-      },
-      "assets": {
-        "description": "Volcengine Ark virtual human asset library under /volcengine. All POST, all authenticated.",
-        "group-create": {
-          "method": "POST",
-          "path": "/volcengine/assets/groups/create"
-        },
-        "group-list": {
-          "method": "POST",
-          "path": "/volcengine/assets/groups/list"
-        },
-        "group-get": {
-          "method": "POST",
-          "path": "/volcengine/assets/groups/get"
-        },
-        "group-update": {
-          "method": "POST",
-          "path": "/volcengine/assets/groups/update"
-        },
-        "group-delete": {
-          "method": "POST",
-          "path": "/volcengine/assets/groups/delete"
-        },
-        "create": {
-          "method": "POST",
-          "path": "/volcengine/assets/create",
-          "mode": "async",
-          "description": "Upload asset (async). Returns Asset ID, poll until Status=Active."
-        },
-        "list": {
-          "method": "POST",
-          "path": "/volcengine/assets/list"
-        },
-        "get": {
-          "method": "POST",
-          "path": "/volcengine/assets/get"
-        },
-        "update": {
-          "method": "POST",
-          "path": "/volcengine/assets/update"
-        },
-        "delete": {
-          "method": "POST",
-          "path": "/volcengine/assets/delete"
-        }
-      },
-      "workflows": {
-        "list": {
-          "method": "GET",
-          "path": "/workflows/"
-        },
-        "run": {
-          "method": "POST",
-          "path": "/workflows/{workflow_id}/run"
-        },
-        "run-from-dsl": {
-          "method": "POST",
-          "path": "/workflows/run",
-          "description": "Execute a workflow from DSL YAML source. Body: { dsl, inputs?, timeout?, callback_url? }. dsl is compiled server-side. Returns job_id; poll GET /jobs/{job_id}."
         }
       },
       "jobs": {
@@ -244,6 +88,41 @@
         "verify": {
           "method": "POST",
           "path": "/auth/verify"
+        }
+      },
+      "voices": {
+        "list": {
+          "method": "GET",
+          "path": "/voices",
+          "description": "Read-only voice discovery for supported workflow inputs."
+        }
+      },
+      "workflows": {
+        "nodes": {
+          "method": "GET",
+          "path": "/workflows/nodes"
+        },
+        "describe": {
+          "method": "GET",
+          "path": "/workflows/nodes/{node_type}"
+        },
+        "guide": {
+          "method": "GET",
+          "path": "/workflows/dsl-guide"
+        },
+        "templates": { "method": "GET", "path": "/workflows/templates" },
+        "template": { "method": "GET", "path": "/workflows/templates/{name}" },
+        "validate": {
+          "method": "POST",
+          "path": "/workflows/validate"
+        },
+        "run": {
+          "method": "POST",
+          "path": "/workflows/run"
+        },
+        "recover": {
+          "method": "GET",
+          "path": "/workflows/requests/{request_id}"
         }
       }
     }
@@ -281,9 +160,9 @@
   },
   "install": {
     "steps": [
-      "Create an API Key at https://artclaw.com/settings (starts with vk_)",
-      "Add X-API-KEY: vk_your_key_here to the HTTP request header",
-      "Call REST API endpoints at https://artclaw.com/api/v1/*"
+      "Create an API key at https://artclaw.com/settings",
+      "Set ARTCLAW_API_KEY locally",
+      "Follow SKILL.md to discover and run workflows through scripts/artclaw.py"
     ]
   }
 }

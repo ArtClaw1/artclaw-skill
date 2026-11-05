@@ -1,27 +1,22 @@
 # OpenClaw Adapter
 
-Use this adapter in OpenClaw and OpenClaw-compatible environments that expose `sessions_spawn`.
+Use this adapter only when the environment exposes OpenClaw-compatible `sessions_spawn`.
 
-## Execution Model
+For every workflow execution, including analysis:
 
-Generation and workflow commands must use spawn mode:
 ```bash
-python3 scripts/artclaw.py generate-image \
-  --prompt "Cyberpunk cityscape at night" \
-  --aspect-ratio 16:9 \
-  --spawn \
-  --deliver-to ou_xxxxxx \
-  --deliver-channel feishu
+python3 /absolute/path/scripts/artclaw.py workflow run \
+  --dsl-file /absolute/path/task.yaml --inputs '{}' \
+  --request-id request_1234567890 --spawn \
+  --deliver-to <current_conversation_id> --deliver-channel <channel>
 ```
 
-Flow:
+1. Take the destination from the current conversation context. For Feishu groups use the `oc_` chat ID; for direct messages use the `ou_` sender ID. Remove metadata prefixes such as `chat:` or `user:`. For Telegram use the current chat ID; for Discord use the current channel ID.
+2. Run the CLI and pass returned `sessions_spawn_args` to `sessions_spawn`.
+3. Tell the user the background worker has started. The CLI spawn response is a plan, not an accepted server job.
+4. The worker waits and delivers every named output and artifact using available platform tools. Preserve text and structured data as well as media.
+5. After acceptance, track the existing job ID. For uncertain acceptance, use `workflow recover <request_id>` with the same team context; never create another submission.
 
-1. Run the target `generate-*` or `run-workflow` command with `--spawn`.
-2. Include `--deliver-to` and `--deliver-channel`.
-3. Read `sessions_spawn_args` from the CLI JSON output.
-4. Pass `sessions_spawn_args` to `sessions_spawn`.
-5. Immediately tell the user the job has been submitted.
-6. Do not wait silently in the main agent.
-7. If a spawned worker reports `poll_timeout` with a `job_id`, do not spawn the same generation again; track that existing job.
+Both delivery flags are required in spawn mode. Do not invent destinations or send to another conversation without the user's request. If the current destination is unavailable, use the generic adapter's server async mode.
 
-Do not use `--spawn` for analysis commands.
+Authentication, discovery and validation do not need a worker.
