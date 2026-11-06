@@ -10,7 +10,7 @@ Get your key: https://artclaw.com/settings
 """
 
 SKILL_NAME = "artclaw-creative-suite"
-SKILL_VERSION = "1.8.0"
+SKILL_VERSION = "2.0.0"
 API_BASE_URL = "https://artclaw.com/api/v1"
 
 API_CONFIG = {
@@ -21,40 +21,18 @@ API_CONFIG = {
 ENDPOINTS = {
     "upload_asset": ("POST", "/assets/upload"),
     "list_voices": ("GET", "/voices"),
-    # Generation (async, returns job_id)
-    "generate_image": ("POST", "/generate/image"),
-    "generate_video": ("POST", "/generate/video"),
-    "generate_seedance_video": ("POST", "/volcengine/video"),
-    "generate_audio": ("POST", "/generate/audio"),
-    "generate_text": ("POST", "/generate/text"),
-    "remove_bg": ("POST", "/generate/remove-bg"),
-    "remove_bg_image": ("POST", "/generate/remove-bg/image"),
-    "remove_bg_video": ("POST", "/generate/remove-bg/video"),
-    "voice_clone": ("POST", "/generate/voice/clone"),
-    "voice_convert": ("POST", "/generate/voice/convert"),
-    "stem_separate": ("POST", "/generate/voice/separate"),
-    "video_retalk": ("POST", "/generate/video-retalk"),
-    "image_enhance": ("POST", "/generate/image-enhance"),
-    "smart_erase": ("POST", "/generate/smart-erase"),
-    "smart_subtitles": ("POST", "/generate/smart-subtitles"),
-    "ai_dubbing": ("POST", "/generate/ai-dubbing"),
-    "video_enhance": ("POST", "/generate/video-enhance"),
-    "video_edit": ("POST", "/generate/video-edit"),
-    "video_extend": ("POST", "/generate/video-extend"),
-    "video_timeline": ("POST", "/generate/video-timeline"),
-    # Voice (async)
-    "voice_stt": ("POST", "/generate/voice/stt"),
-    "voice_tts": ("POST", "/generate/voice/tts"),
-    # Workflows
-    "list_workflows": ("GET", "/workflows/"),
-    "run_workflow": ("POST", "/workflows/{workflow_id}/run"),
-    # Job management
+    "search_nodes": ("GET", "/workflows/nodes"),
+    "describe_node": ("GET", "/workflows/nodes/{node_type}"),
+    "workflow_guide": ("GET", "/workflows/dsl-guide"),
+    "workflow_templates": ("GET", "/workflows/templates"),
+    "workflow_template": ("GET", "/workflows/templates/{name}"),
+    "validate_workflow": ("POST", "/workflows/validate"),
+    "run_workflow": ("POST", "/workflows/run"),
+    "recover_workflow": ("GET", "/workflows/requests/{request_id}"),
     "get_job": ("GET", "/jobs/{job_id}"),
     "list_jobs": ("GET", "/jobs/"),
     "cancel_job": ("POST", "/jobs/{job_id}/cancel"),
-    # Account
     "account_info": ("GET", "/account/info"),
-    # Auth
     "verify_key": ("POST", "/auth/verify"),
 }
 

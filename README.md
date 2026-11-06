@@ -1,85 +1,39 @@
-# 🎨 ARTCLAW AI Creative Suite — OpenClaw Skill
+# ARTCLAW AI Creative Suite
 
-An all-in-one AI content creation skill powered by the [ARTCLAW](https://artclaw.com/) platform. It supports AI image generation, AI video generation, PPT creation, multimodal analysis, and workflow orchestration.
+Use [ARTCLAW](https://artclaw.com/) through conversation to discover creative capabilities and execute workflows. A single task uses one node; multi-step requests connect nodes in the same workflow.
 
----
+## Setup
 
-## ✨ Features
-
-| Capability             | Description                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| 🖼️ AI Image Generation | Text-to-image, image-to-image, marketing visuals, product image sets                                                |
-| 🎬 AI Video Generation | Text-to-video, image-to-video                                                                                       |
-| 🎞️ Video Editing       | AI segment retake, video continuation and timeline cut/composition (`video-edit`, `video-extend`, `video-timeline`) |
-| 📁 Local Media         | Upload local image, video or audio before generation; use its Creator CDN URL in supported media inputs and queues  |
-| 🔍 Multimodal Analysis | Image understanding, video analysis, script analysis, character profile extraction                                  |
-| ⚡ Workflows           | Run preset pipelines in one click (animation / comics / e-commerce detail page, etc.)                               |
-| ✏️ Prompt Tools        | Prompt optimization for logos, covers, marketing images, and carousels (free, no API key required)                  |
-
----
-
-## 📦 Install on OpenClaw
-
-Tell OpenClaw directly:
-
-```text
-install skill: https://github.com/ArtClaw1/artclaw-skill
-```
-
----
-
-## 🔑 Configure API Key
-
-Generation features in this skill require an ARTCLAW API key.
-
-1. Open the ARTCLAW settings page: **https://artclaw.com/#/settings**
-2. In the **API Keys** section, click "Create", enter a name, and copy the generated key (it starts with `vk_`)
-3. In the OpenClaw Skill configuration page, set the environment variable:
-
-   ```
-   ARTCLAW_API_KEY=vk_your_key_here
-   ```
-
-> **Note:** Prompt tool features are free to use and do not require an API key.
-
----
-
-## 🚀 Quick Start
-
-After installation and configuration, describe your creative request directly in the OpenClaw chat:
-
-```text
-Help me create a cyberpunk-style cat illustration
-```
-
-```text
-Use this product image to generate an e-commerce carousel set
-```
-
-Local image, video and audio files can be used throughout supported generation commands. Mark a media input as `@path`; the Skill uploads it to Creator before task creation and passes the resulting CDN URL in the original field or reference queue. Existing URLs remain unchanged. The file must be accessible to the agent process. See [direct generation controls](references/direct-generation.md) for examples and supported formats.
-
-To choose one of the new image models:
-
-```text
-Use GT-Image-2.5-Flash to generate a cat illustration at 2K with high quality
-```
-
-Choose `GT-Image-2.5-Flash` for speed or `GT-Image-2.5` for editing precision. Both support reference images, 1K / 2K / 4K resolution, `low` / `medium` / `high` / `xhigh` / `max` quality (default `high`), and transparent backgrounds via `--background transparent`. The API and Skill use these exact model names.
-
-## Update an existing installation
-
-Run from the installed Skill directory:
+Install this repository as a Skill in your agent. Set `ARTCLAW_API_KEY` to a key created in [ARTCLAW settings](https://artclaw.com/settings), or configure it locally:
 
 ```bash
-python3 scripts/artclaw.py self-update
+python3 scripts/artclaw.py config-init --api-key "vk_..."
+python3 scripts/artclaw.py verify-key
 ```
 
-Then reload the Skill in your agent or start a new session that reads its updated instructions.
+Requires Python 3.8+ and `requests`. Follow [SKILL.md](SKILL.md) and the platform adapter for OpenClaw, Claude Code, Hermes or a generic CLI environment.
 
----
+## Usage
 
-## 📋 Version
+Describe the outcome. The agent discovers available nodes and current parameters online, validates a DSL workflow, and submits it.
 
-- **Version:** 1.7.0
-- **Author:** ARTCLAW Team
-- **License:** MIT
+```bash
+python3 scripts/artclaw.py workflow guide
+python3 scripts/artclaw.py nodes search --query "image"
+python3 scripts/artclaw.py nodes describe <node_type>
+python3 scripts/artclaw.py workflow validate --dsl-file task.yaml --inputs '{}'
+python3 scripts/artclaw.py workflow run --dsl-file task.yaml --inputs '{}' --no-wait
+python3 scripts/artclaw.py jobs status <job_id>
+```
+
+Node availability, models and defaults come from the server; model names match Creator. Typed inputs support local media as `@/absolute/path/file`; the server's upload plan is validated before uploading. Dry-run does not upload or generate.
+
+Results preserve named outputs and typed artifacts, including multiple files and structured data. After a timeout, keep tracking the accepted job. For uncertain acceptance recover the original request ID instead of submitting another task.
+
+Team selection uses `--team-id`, then `ARTCLAW_TEAM_ID`, then persisted `teamId`; an authentication-bound team takes precedence on the server.
+
+## Maintenance
+
+Ordinary updates to registered executable nodes, models and parameters are discovered online without synchronizing a business catalog into this Skill. Protocol and platform-adapter changes can still require a release.
+
+Version 2 uses the generic workflow commands exclusively. Deploy the matching workflow API before distributing this client. Previously installed version 1 clients continue to use the retained server APIs; their frozen compatibility fixture is outside the published Skill.
